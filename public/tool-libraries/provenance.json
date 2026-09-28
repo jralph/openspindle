@@ -1,0 +1,213 @@
+{
+  "description": "Catalogs derived from the user-supplied resources in this workspace.",
+  "transformations": [
+    "Combined seven Makera milling libraries; excluded standalone holders and lasers.",
+    "Kept the supplied metric Genmitsu copy to avoid duplicate inch representations.",
+    "Named every tool by style and size in its source unit; the vendor's description is kept as vendor-description.",
+    "Set each catalog's vendor name, took SpeTool product IDs from the catalog numbers in their descriptions and moved coatings from names to coating.",
+    "Removed float noise from geometry (1.499999999999994 became 1.5) and merged records that describe the same tool, such as SpeTool single tools and five-packs or a Genmitsu bit in several kits; a merged tool keeps every product ID and preset (mergedDuplicates).",
+    "Corrected the dimensions that contradict the vendors' own product pages or descriptions (corrections); presets, holders, shafts and source units are otherwise unchanged.",
+    "Expressions are inert source metadata and were never evaluated; description, product ID and vendor expressions follow the tidied values.",
+    "Converted the transcribed Dreanique TRS dimension tables to Fusion thread mills; each item code is checked against its pitch, cutting diameter and shank cells.",
+    "Dreanique thread mills have one flute and one profile (NOF and NT 1), as the code key states; the right hand, 60 degree ISO metric profile and absent coolant supply are assumed, as the tables do not state them. L1 is the shoulder length. Neck diameter, flute and body lengths, tool numbers and cutting presets are not in the tables and are left out.",
+    "The Makera Wired Probe 2.0's dimensions in makera-probe.json, and its model public/models/makera-wired-probe-2.glb (scripts/wired-probe.mjs), are estimated from Makera's product photos, scaled by the known diameters of its shank adapters; they are not measured."
+  ],
+  "sourceRepository": "https://github.com/MakeraInc/CarveraProfiles",
+  "sourceRevision": "de08a657bdc9c230a094dbdba792acd70bfcdf32",
+  "license": "Source rights remain with their respective owners. No license grant is inferred from the supplied files.",
+  "catalogs": [
+    {
+      "id": "makera",
+      "name": "Makera",
+      "description": "Milling, engraving, drilling and thread tools",
+      "fileName": "makera.json",
+      "url": "/tool-libraries/makera.json",
+      "count": 124,
+      "sources": [
+        {
+          "path": "resources/CarveraProfiles/CAM_Post_Processors/Fusion360-profiles/Tool Files/Makera Ball Endmills.tools",
+          "sha256": "e561688c5ed2da3599b67a1404aa422a5625c1763f3eea1e53c8c1e96aba49dd",
+          "member": "tools.json",
+          "memberSha256": "a7d5ca49e376616d4099c6e2395ecdc530322badfa2fe0051ec46bb3c9a03261",
+          "version": 36,
+          "count": 18
+        },
+        {
+          "path": "resources/CarveraProfiles/CAM_Post_Processors/Fusion360-profiles/Tool Files/Makera Corn Bits.tools",
+          "sha256": "e29b9499fbcf24f114be58b098b15f02de93a8a2f4f033b7a2ad46fb698e54fe",
+          "member": "tools.json",
+          "memberSha256": "590cbc58df3331f93f52703faba3525ff862fe302a2e2a4aad7122121ccc988f",
+          "version": 36,
+          "count": 20
+        },
+        {
+          "path": "resources/CarveraProfiles/CAM_Post_Processors/Fusion360-profiles/Tool Files/Makera Drill Bits.tools",
+          "sha256": "19918e3e68780db6c571b6991dbcc41d9e71038849d5fdf43abf6b26f9cef1eb",
+          "member": "tools.json",
+          "memberSha256": "a8c239b8aabec73a532bb0984730f4cd7d596499f7a0fdf96f080255d5adb348",
+          "version": 36,
+          "count": 30
+        },
+        {
+          "path": "resources/CarveraProfiles/CAM_Post_Processors/Fusion360-profiles/Tool Files/Makera Engraving Bits.tools",
+          "sha256": "77f78971172829945be59911a63df92bf7550ee41bce02a9ef5229b8dd86d5af",
+          "member": "tools.json",
+          "memberSha256": "4766ebb0d588c8fe151487147433d4f31e3ca87ee65c931295266a03a314d942",
+          "version": 36,
+          "count": 21
+        },
+        {
+          "path": "resources/CarveraProfiles/CAM_Post_Processors/Fusion360-profiles/Tool Files/Makera O Flute Bits.tools",
+          "sha256": "fe05e9c2a1effebce64044a328e3ebe84c6c19c5b243811dd9cef972115ab378",
+          "member": "tools.json",
+          "memberSha256": "b84afefd443b524097df05570cf5fbfade6e237ca315e977e8d52d70646e842f",
+          "version": 36,
+          "count": 25
+        },
+        {
+          "path": "resources/CarveraProfiles/CAM_Post_Processors/Fusion360-profiles/Tool Files/Makera Other Tools.tools",
+          "sha256": "3cfc62c85b6fddcacdd1299f1ad09ca4a09e82a9f491b32f0fc1797baaff43a7",
+          "member": "tools.json",
+          "memberSha256": "7779fa08222d85a8d66cb8cf7c4f5c2c994790b3b74bf442b23358bccb3f66d4",
+          "version": 36,
+          "count": 2
+        },
+        {
+          "path": "resources/CarveraProfiles/CAM_Post_Processors/Fusion360-profiles/Tool Files/Makera Thread Mills.tools",
+          "sha256": "05dd4d7323334d88c8b5b1fcab8599714989069b521c79a41169d7c3fe3de269",
+          "member": "tools.json",
+          "memberSha256": "7b9be67d165aa78e5f59a9a236a575c4ba4eb9cd270e59f69bfbecfce1664d28",
+          "version": 36,
+          "count": 8
+        }
+      ],
+      "mergedDuplicates": []
+    },
+    {
+      "id": "genmitsu",
+      "name": "Genmitsu",
+      "description": "SainSmart Genmitsu metric tool library",
+      "fileName": "genmitsu.json",
+      "url": "/tool-libraries/genmitsu.json",
+      "count": 211,
+      "sources": [
+        {
+          "path": "resources/genmitsutools.json",
+          "sha256": "90c830fd2fb2a1e3338b4871aca6ff19a259224340a7eea4f65a05677d8cc035",
+          "member": null,
+          "memberSha256": "90c830fd2fb2a1e3338b4871aca6ff19a259224340a7eea4f65a05677d8cc035",
+          "version": 18,
+          "count": 229
+        }
+      ],
+      "mergedDuplicates": [
+        "Genmitsu V 30° groove [VE10B]",
+        "Genmitsu V 30° groove [VE10A]",
+        "Genmitsu ball nose [MC30A]",
+        "Genmitsu flat end corncob [70C15], Nano Blue Coat",
+        "Genmitsu flat end corncob [70C15], Nano Blue Coat",
+        "Genmitsu flat end corncob [70C15], Nano Blue Coat",
+        "Genmitsu flat end corncob [70C15], Nano Blue Coat",
+        "Genmitsu flat end corncob [70C15], Nano Blue Coat",
+        "Genmitsu flat end corncob [70C08], Nano Blue Coat",
+        "Genmitsu flat end corncob [70C08], Nano Blue Coat",
+        "Genmitsu flat end corncob [70C08], Nano Blue Coat",
+        "Genmitsu flat end corncob [70C08], Nano Blue Coat",
+        "Genmitsu flat end corncob [70C08], Nano Blue Coat",
+        "Genmitsu flat end corncob [70C08], Nano Blue Coat",
+        "Genmitsu flat end corncob [70C08], Nano Blue Coat",
+        "Genmitsu flat end corncob [70C08], Nano Blue Coat",
+        "Genmitsu flat end corncob [70C08], Nano Blue Coat",
+        "Genmitsu flat end corncob [70C08], Nano Blue Coat"
+      ]
+    },
+    {
+      "id": "spetool",
+      "name": "SpeTool",
+      "description": "SpeTool library with metric and imperial tools",
+      "fileName": "spetool.json",
+      "url": "/tool-libraries/spetool.json",
+      "count": 220,
+      "sources": [
+        {
+          "path": "resources/SpeTool-Fusion-360-Tool-File-Database-251015.zip",
+          "sha256": "288196bc7d73b53f4343efb074ab817e71e9be805d0cec904b4b84c66cf1f7e0",
+          "member": "tools.json",
+          "memberSha256": "baba9acead90f04c4ea0920ee1a2408cfe5fb981152dcbad74147a21b5fad285",
+          "version": 36,
+          "count": 225
+        }
+      ],
+      "mergedDuplicates": [
+        "SpeTool W01001 5Pcs CNC 2D and 3D Carving 5.12 Deg Tapered Angle Ball Nose 0.25mm Radius x 1/8\" Shank x 15mm Cutting Length x 1-1/2\" Long 2 Flute SC TiAlN Coated Upcut Router Bits",
+        "SpeTool W01002 5Pcs CNC 2D and 3D Carving 4.16 Deg Tapered Angle Ball Nose 0.5mm Radius x 1/8\" Shank x 15mm Cutting Length x 1-1/2\" Long 2 Flute SC TiAlN Coated Upcut Router Bits",
+        "SpeTool W01003 5Pcs CNC 2D and 3D Carving 3.2 Deg Tapered Angle Ball Nose 0.75mm Radius x 1/8\" Shank x 15mm Cutting Length x 1-1/2\" Long 2 Flute SC TiAlN Coated Upcut Router Bits",
+        "SpeTool W01004 5Pcs CNC 2D and 3D Carving 2.24 Deg Tapered Angle Ball Nose 1.0mm Radius x 1/8\" Shank x 15mm Cutting Length x 1-1/2\" Long 2 Flute SC TiAlN Coated Upcut Router Bits",
+        "SpeTool W01505 0.25mm Radius x 6mm Shank x 30.5mm Cutting Length x 75mm Long 2 Flute Upcut Router Bit"
+      ]
+    },
+    {
+      "id": "dreanique",
+      "name": "Dreanique",
+      "description": "Dreanique solid carbide thread mills",
+      "fileName": "dreanique.json",
+      "url": "/tool-libraries/dreanique.json",
+      "count": 23,
+      "sources": [
+        {
+          "path": "resources/dreanique/trs-thread-mill-code-key.png",
+          "sha256": "35946e4b96afbc74dee362378e247f2bef06ebce7c00fb45858d2e415c2507c5"
+        },
+        {
+          "path": "resources/dreanique/trs-thread-mill-dimensions.webp",
+          "sha256": "197ea75d144d32af23f0ce51bf273662626f6e5142fbecbf9806064b2e07a271"
+        }
+      ],
+      "mergedDuplicates": []
+    }
+  ],
+  "corrections": [
+    {
+      "guid": "cf0b7848-7784-4ef7-a7d5-b6202c7c6d4d",
+      "vendorDescription": "Makera Metal - 1.5*4.5mm",
+      "geometry": {
+        "LCF": 4.5,
+        "shoulder-length": 4.5
+      },
+      "evidence": "Makera sells the 1.5 mm ball nose for metal as 1.5mm * 4.5mm: https://www.makera.com/products/two-flute-ball-nose-bit-for-metal-1-8-shank"
+    },
+    {
+      "guid": "953b2061-953b-4638-b743-73bde232876d",
+      "vendorDescription": "Spiral O Metal 6*30mm DLC",
+      "geometry": {
+        "LCF": 30,
+        "shoulder-length": 30
+      },
+      "evidence": "Makera sells the 6 mm DLC O-flute for metal as 6mm * 30mm: https://global.makera.com/products/spiral-o-single-flute-bit-for-metal-6mm-shank"
+    },
+    {
+      "guid": "74094348-caf9-4e2c-a7da-dd1c33baf7a6",
+      "vendorDescription": "SpeTool W06010 SPE-X Extra Tool Life Coated Solid Carbide 30 Degree Engraving 0.015\" Tip Width x 1/4\" Shank x 2-1/4\" Long Signmaking Router Bit",
+      "geometry": {
+        "tip-diameter": 0.015
+      },
+      "evidence": "SpeTool's own description and product URL for W06010 both give a 0.015 inch tip; the record repeats W06009's 0.005 inch (the product page is no longer online)."
+    },
+    {
+      "guid": "e527ddba-86ad-4e46-a466-87d6fdb78279",
+      "vendorDescription": "SpeTool W04901 UP CUT 3 FL 6MM DIA x 32MM CL x 6MM SHANK x 75MM OVL ROUGHING CUTTER",
+      "geometry": {
+        "NOF": 3
+      },
+      "evidence": "SpeTool W04901 is a 3 flute roughing cutter: https://spetools.com/en-eu/products/spetool-eu-sc-up-cut-3-fl-6mm-dia-x-32mm-cl-x-6mm-shank-x-75mm-ovl-roughing-cutter"
+    },
+    {
+      "guid": "a68af107-a7e0-4496-ae17-21ca2c2be808",
+      "vendorDescription": "SpeTool W04902 UP CUT 3 FL 8MM DIA x 32MM CL x 8MM SHANK x 75MM OVL ROUGHING CUTTER",
+      "geometry": {
+        "NOF": 3
+      },
+      "evidence": "SpeTool W04902 is a 3 flute roughing cutter: https://spetools.com/en-eu/products/spetool-eu-sc-up-cut-3-fl-8mm-dia-x-32mm-cl-x-8mm-shank-x-75mm-ovl-roughing-cutter"
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+import { DevicePicker } from "@/features/device/device-picker"
+import { HeightMapDialog } from "@/features/device/height-map-dialog"
+import { ModelsDialog } from "@/features/models/models-dialog"
+import { PluginRequestHost } from "@/features/plugins/plugin-request-host"
+import { PluginsDialog } from "@/features/plugins/plugins-dialog"
+import { AddOperationDialog } from "@/features/prepare/add-operation/add-operation-dialog"
+import { ProgramSourceDialog } from "@/features/prepare/source/program-source-dialog"
+import {
+  NewProjectDialog,
+  OpenProjectDialog,
+  ProjectReportDialog,
+} from "@/features/project/project-dialogs"
+import { StockDialog } from "@/features/prepare/stock/stock-dialog"
+import { WorkspaceToolLibrary } from "@/features/tool-library"
+import { WorkspaceSettingsDialog } from "@/features/workspace-settings/workspace-settings-dialog"
+import { AppDialog } from "./app-dialog"
+import { closeDialog, useOpenDialog } from "./dialogs"
+import type { WorkspaceDialog } from "./dialogs"
+import { ImportTargetDialog } from "./import-target-dialog"
+
+/** The open workspace dialog; opening another replaces it. */
+function OpenDialog({ dialog }: { dialog: WorkspaceDialog }) {
+  switch (dialog.kind) {
+    case "device":
+      return (
+        <AppDialog title="Connect device" onClose={closeDialog}>
+          <DevicePicker close={closeDialog} />
+        </AppDialog>
+      )
+    case "plugins":
+      return <PluginsDialog onClose={closeDialog} />
+    case "models":
+      return <ModelsDialog onClose={closeDialog} />
+    case "height-map":
+      return <HeightMapDialog onClose={closeDialog} />
+    case "stock":
+      return <StockDialog plateId={dialog.plateId} onClose={closeDialog} />
+    case "tools":
+      return (
+        <WorkspaceToolLibrary assign={dialog.assign} onClose={closeDialog} />
+      )
+    case "source":
+      return (
+        <ProgramSourceDialog
+          plateId={dialog.plateId}
+          operationId={dialog.operationId}
+          onClose={closeDialog}
+        />
+      )
+    case "add-operation":
+      return <AddOperationDialog preset={dialog.preset} onClose={closeDialog} />
+    case "import-target":
+      return <ImportTargetDialog files={dialog.files} />
+    case "new-project":
+      return <NewProjectDialog />
+    case "open-project":
+      return <OpenProjectDialog candidate={dialog.candidate} />
+    case "project-report":
+      return <ProjectReportDialog report={dialog.report} />
+    case "workspace-settings":
+      return <WorkspaceSettingsDialog onClose={closeDialog} />
+  }
+}
+
+/**
+ * Renders the open workspace dialog and, above it, what plugin views ask the user
+ * (tools.choose, ui.confirm), so a view inside a dialog keeps running while it waits.
+ */
+export function DialogHost() {
+  const dialog = useOpenDialog()
+  return (
+    <>
+      {dialog && <OpenDialog dialog={dialog} />}
+      <PluginRequestHost />
+    </>
+  )
+}

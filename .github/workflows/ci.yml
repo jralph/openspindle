@@ -1,0 +1,105 @@
+# Checks every pull request and every push to main; the ruleset on main requires the Checks job.
+# Release pull requests also package the app on macOS, so a packaging problem shows before the
+# release is tagged, and keep that build for testers to try. See docs/releasing.md.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a pull request replaces its running checks; pushes to main each run in full.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # The checks bundle the app but never start Electron.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run check
+      - run: npm run build
+
+      - name: Check that the committed third-party notices are current
+        run: |
+          if ! git diff --exit-code --stat -- build/third-party-notices.json; then
+            echo "::error::build/third-party-notices.json is out of date: run npm run build and commit it"
+            exit 1
+          fi
+
+  package:
+    name: Package (macOS)
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'release-please--')
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # The universal app as a release builds it, but ad-hoc signed and not notarized, and without
+      # an update feed, which electron-builder writes only beside a DMG or zip target.
+      - run: npm run package:mac -- --universal
+
+      # ditto keeps the bundle's symlinks, which its signature covers.
+      - name: Zip the app
+        id: zip
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          file="OpenSpindle-$version-${HEAD_SHA::7}-universal-mac.zip"
+          ditto -c -k --keepParent release/mac-universal/OpenSpindle.app "$file"
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        id: upload
+        with:
+          path: ${{ steps.zip.outputs.file }}
+          # The zip itself, not a zip of it.
+          archive: false
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Link the build from the run's summary
+        env:
+          FILE: ${{ steps.zip.outputs.file }}
+          URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          {
+            echo "### Try this build"
+            echo
+            echo "[$FILE]($URL): the universal app, ad-hoc signed and not notarized."
+            echo
+            echo "- macOS blocks its first launch: open it once, then choose **Open Anyway** in System Settings → Privacy & Security."
+            echo "- Quit an installed OpenSpindle first: this build uses the same data folder, and only one runs at a time."
+            echo "- It does not update itself."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+out/
+release/
+.output/
+.vinxi/
+.tanstack/
+.wrangler/
+*.tsbuildinfo
+
+# Environment and local overrides
+.env*
+!.env.example
+*.local
+
+# Logs and coverage
+*.log
+npm-debug.log*
+coverage/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# Python caches (scripts/)
+__pycache__/
+*.py[cod]
+
+# Tooling scratch files
+__unconfig*
+todos.json
+
+# Plugin SDK declarations (npm run sdk:types, also on install)
+packages/plugin-sdk/types/
+.gitnexus

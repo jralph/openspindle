@@ -1,0 +1,31 @@
+# Monthly update pull requests, titled as Conventional Commits that stay out of the release notes:
+# retitle one fix(deps): when an update matters to people using the app, such as an Electron
+# security fix. New versions wait a week before they are proposed.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      npm:
+        update-types: [minor, patch]
+
+  # The workflows pin every action to a commit; this keeps the pins current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        patterns: ["*"]

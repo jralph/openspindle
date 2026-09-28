@@ -1,0 +1,479 @@
+/**
+ * Geometry-only NC preview. This module never sends commands to a machine.
+ *
+ * Coordinates and feed rates are normalized to millimetres and mm/min. Work
+ * coordinates start at (0, 0, 0); machine position/offsets are not inferred, unless
+ * a machine's firmware (`GCodeFirmware`) places the codes it reads its own way:
+ * machine coordinates, probing and tool changes. Blocks it cannot follow are left
+ * out, so the preview is not a machining verification or collision check. Lines that
+ * cannot run as written (`readNcBlock`) are left out too, and reported (`unreadable`).
+ */
+import { readNcBlock } from "@/machine/contract"
+import type { NcBlockProblem } from "@/machine/contract"
+
+export type Point3 = [number, number, number]
+
+export interface GCodeSegment {
+  start: Point3
+  end: Point3
+  rapid: boolean
+  /** Rate in mm/min; rapids before any F word assume 3000. */
+  feed: number
+  /** One-based source line, including blank lines and comments. */
+  line: number
+  tool: number
+  spindle: number
+  /** A probing move: it ends where the probe, or a tool on a tool setter, touches. */
+  probing?: true
+  /** The sample of a probe grid the move belongs to, from 0 in the order they are probed. */
+  probePoint?: number
+}
+
+/** A move a machine's firmware makes for a block, in the program's work coordinates. */
+export type FirmwareMove = {
+  readonly end: Point3
+  readonly rapid: boolean
+  /** mm/min, for timing. */
+  readonly feed: number
+  readonly probing?: true
+  readonly probePoint?: number
+  /** The tool in the spindle; the active tool when absent. */
+  readonly tool?: number
+}
+
+/** What a machine's firmware does for a block: its moves, and what it leaves set. */
+export type FirmwareEffect = {
+  readonly moves: readonly FirmwareMove[]
+  /** The work offset afterwards, shifting absolute targets as G92 does (G10 L20 sets it). */
+  readonly offset?: Point3
+  /** The tool in the spindle afterwards. */
+  readonly tool?: number
+  /** The feed afterwards, in mm/min: the firmware reads a claimed block's F its own way. */
+  readonly feed?: number
+}
+
+/** A block as a machine's firmware reads it, with the preview's state before it. */
+export type FirmwareBlock = {
+  readonly line: number
+  readonly gCodes: readonly number[]
+  readonly mCodes: readonly number[]
+  /** Its other words, the last of each letter, in program units. */
+  readonly words: ReadonlyMap<string, number>
+  /** Where the tool is, in the program's work coordinates. */
+  readonly position: Point3
+  /** Millimetres per program unit. */
+  readonly scale: number
+  readonly absolute: boolean
+  readonly offset: Point3
+  /** The motion mode (G0 to G3) the block moves in; null when none is active. */
+  readonly motion: number | null
+  /** mm/min, as F last set it; null before any. */
+  readonly feed: number | null
+  /** The tool in the spindle, and the one T last selected. */
+  readonly tool: number
+  readonly selectedTool: number
+}
+
+/**
+ * A machine's firmware, as far as the preview follows how it moves: the codes it reads its own
+ * way or runs routines for (machine coordinates, probing, tool changes). Without one the
+ * preview omits them, as it cannot tell where they go.
+ */
+export interface GCodeFirmware {
+  /** Whether it reads a G or M code (a subcode as its decimals) itself. */
+  handles: (letter: "G" | "M", code: number) => boolean
+  /** What a block with one of its codes does; null when the preview cannot follow it. */
+  run: (block: FirmwareBlock) => FirmwareEffect | null
+}
+
+/** The lines a program holds that cannot run as written: the first, and how many. */
+export type UnreadableLines = {
+  readonly line: number
+  readonly problem: NcBlockProblem
+  readonly count: number
+}
+
+export interface GCodeProgram {
+  name: string
+  source: string
+  lines: string[]
+  lineCount: number
+  segments: GCodeSegment[]
+  bounds: { min: Point3; max: Point3; size: Point3 }
+  tools: number[]
+  /** Lines the preview leaves out as they cannot run as written; null when every line can. */
+  unreadable: UnreadableLines | null
+}
+
+/** A move's feed without an F word before it, in mm/min: a rapid's, and a feed move's. */
+const RAPID_FEED = 3_000
+const DEFAULT_FEED = 600
+/**
+ * Programs longer than this are not read: previews stop here and compiling refuses them. It
+ * leaves room above stored NC's 10 MiB, about 500,000 lines as Makera CAM writes them.
+ */
+export const MAX_PROGRAM_LINES = 1_000_000
+/** One line can tessellate into many arc segments; the preview stops at this many. */
+const MAX_SEGMENTS = 1_000_000
+const EPSILON = 1e-7
+
+const length = (a: Point3, b: Point3) =>
+  Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2])
+
+function arcSweep(startAngle: number, endAngle: number, clockwise: boolean) {
+  let sweep = endAngle - startAngle
+  if (clockwise) {
+    while (sweep >= -EPSILON) sweep -= Math.PI * 2
+  } else {
+    while (sweep <= EPSILON) sweep += Math.PI * 2
+  }
+  return sweep
+}
+
+/**
+ * Tessellate an XY arc, with helical Z interpolation. Null for an invalid arc, which is omitted:
+ * both R and I/J, neither, a radius its endpoints cannot share, or a full circle by R.
+ */
+function arcPoints(
+  start: Point3,
+  end: Point3,
+  clockwise: boolean,
+  words: Map<string, number>,
+  scale: number
+): Point3[] | null {
+  let centerX: number
+  let centerY: number
+  if (words.has("R") && (words.has("I") || words.has("J"))) return null
+  if (words.has("R")) {
+    const signedRadius = words.get("R")! * scale
+    const radius = Math.abs(signedRadius)
+    const dx = end[0] - start[0]
+    const dy = end[1] - start[1]
+    const chord = Math.hypot(dx, dy)
+    if (chord < EPSILON || radius < chord / 2 - EPSILON) return null
+    const height = Math.sqrt(Math.max(0, radius * radius - (chord * chord) / 4))
+    const midX = (start[0] + end[0]) / 2
+    const midY = (start[1] + end[1]) / 2
+    const candidates = [1, -1].map((side) => {
+      const x = midX - (side * height * dy) / chord
+      const y = midY + (side * height * dx) / chord
+      const sweep = arcSweep(
+        Math.atan2(start[1] - y, start[0] - x),
+        Math.atan2(end[1] - y, end[0] - x),
+        clockwise
+      )
+      return { x, y, sweep }
+    })
+    const center = candidates.find((candidate) =>
+      signedRadius >= 0
+        ? Math.abs(candidate.sweep) <= Math.PI + EPSILON
+        : Math.abs(candidate.sweep) >= Math.PI - EPSILON
+    )
+    // A chord far below the radius rounds both sweeps to a full turn.
+    if (!center) return null
+    centerX = center.x
+    centerY = center.y
+  } else if (words.has("I") || words.has("J")) {
+    centerX = start[0] + (words.get("I") ?? 0) * scale
+    centerY = start[1] + (words.get("J") ?? 0) * scale
+  } else return null
+
+  const radius = Math.hypot(start[0] - centerX, start[1] - centerY)
+  const endRadius = Math.hypot(end[0] - centerX, end[1] - centerY)
+  if (
+    radius < EPSILON ||
+    Math.abs(radius - endRadius) > Math.max(0.02, radius * 0.001)
+  )
+    return null
+  const startAngle = Math.atan2(start[1] - centerY, start[0] - centerX)
+  const sweep = arcSweep(
+    startAngle,
+    Math.atan2(end[1] - centerY, end[0] - centerX),
+    clockwise
+  )
+  // At most 3° per segment, also aiming for <0.5mm chords on ordinary toolpaths.
+  const steps = Math.min(
+    4_096,
+    Math.max(
+      2,
+      Math.ceil(Math.abs(sweep) / (Math.PI / 60)),
+      Math.ceil((Math.abs(sweep) * radius) / 0.5)
+    )
+  )
+  return Array.from({ length: steps }, (_, index): Point3 => {
+    if (index === steps - 1) return [...end]
+    const fraction = (index + 1) / steps
+    const angle = startAngle + sweep * fraction
+    return [
+      centerX + Math.cos(angle) * radius,
+      centerY + Math.sin(angle) * radius,
+      start[2] + (end[2] - start[2]) * fraction,
+    ]
+  })
+}
+
+export function parseGCode(
+  source: string,
+  fileName = "untitled.nc",
+  firmware?: GCodeFirmware
+): GCodeProgram {
+  const lines = source.replace(/\r\n?/g, "\n").split("\n")
+  const segments: GCodeSegment[] = []
+  const tools = new Set<number>()
+  let firstUnreadable: Omit<UnreadableLines, "count"> | null = null
+  let unreadableCount = 0
+  let position: Point3 = [0, 0, 0]
+  let offset: Point3 = [0, 0, 0]
+  let absolute = true
+  let incrementalArcCenters = true
+  let scale = 1
+  let plane = 17
+  let motion: number | null = null
+  let feed: number | null = null
+  let feedOverride = 1
+  let selectedTool = 1
+  let tool = 1
+  let spindle = 0
+  let spindleRunning = false
+  let stopped = false
+  /** Whether a move found the preview's segments full, which ends it. */
+  const segmentLimit = { reached: false }
+
+  /** A programmed move, or a firmware's with its own feed and tool. */
+  const append = (
+    end: Point3,
+    rapid: boolean,
+    line: number,
+    made?: FirmwareMove
+  ) => {
+    if (segments.length >= MAX_SEGMENTS) {
+      segmentLimit.reached = true
+      return
+    }
+    if (length(position, end) < EPSILON) {
+      position = [...end]
+      return
+    }
+    const nominalFeed =
+      made?.feed ?? feed ?? (rapid ? RAPID_FEED : DEFAULT_FEED)
+    const movedBy = made?.tool ?? tool
+    segments.push({
+      start: [...position],
+      end: [...end],
+      rapid,
+      feed: nominalFeed * feedOverride,
+      line,
+      tool: movedBy,
+      spindle: spindleRunning ? spindle : 0,
+      ...(made?.probing ? { probing: true } : {}),
+      ...(made?.probePoint === undefined
+        ? {}
+        : { probePoint: made.probePoint }),
+    })
+    tools.add(movedBy)
+    position = [...end]
+  }
+
+  for (
+    let index = 0;
+    index < Math.min(lines.length, MAX_PROGRAM_LINES);
+    index++
+  ) {
+    if (stopped || segmentLimit.reached) break
+    const line = index + 1
+    const block = readNcBlock(lines[index])
+    // A line that cannot run is not drawn: the plate reports it instead.
+    if (block.problem) {
+      firstUnreadable ??= { line, problem: block.problem }
+      unreadableCount++
+      continue
+    }
+    if (!block.words.length || block.message !== null) continue
+    const words = new Map<string, number>()
+    const gCodes: number[] = []
+    const mCodes: number[] = []
+    for (const { letter, value } of block.words) {
+      if (letter === "G") gCodes.push(value)
+      else if (letter === "M") mCodes.push(value)
+      else words.set(letter, value)
+    }
+    // Codes the machine's firmware reads its own way leave their block to it.
+    const claimed = firmware
+      ? [
+          ...gCodes.filter((g) => firmware.handles("G", g)),
+          ...mCodes.filter((m) => firmware.handles("M", m)),
+        ]
+      : []
+    let omitMotion = false
+    let coordinateSet = false
+    for (const g of gCodes) {
+      if (firmware?.handles("G", g)) continue
+      if ([0, 1, 2, 3].includes(g)) motion = g
+      else if (g === 17 || g === 18 || g === 19) plane = g
+      else if (g === 20) scale = 25.4
+      else if (g === 21) scale = 1
+      else if (g === 90) absolute = true
+      else if (g === 91) absolute = false
+      else if (g === 91.1) incrementalArcCenters = true
+      else if (g === 90.1) incrementalArcCenters = false
+      else if (g === 4) omitMotion = true
+      else if (g === 92) {
+        coordinateSet = true
+        omitMotion = true
+      } else if (g === 92.1) {
+        offset = [0, 0, 0]
+        omitMotion = true
+      } else if (g === 80) motion = null
+      else if (
+        // The work coordinate system the preview is in, path control (how corners blend, not
+        // the programmed path), cancelled compensation and feed modes change no path drawn.
+        ![54, 61, 61.1, 64, 40, 49, 93, 94, 95].includes(g)
+      ) {
+        // Anything else is not followed: its block is left out, and a canned cycle's
+        // coordinates after it too.
+        omitMotion = true
+        if (g >= 81 && g <= 89) motion = null
+      }
+    }
+    // A block the firmware claims has F as the firmware reads it, such as a probing feed.
+    if (words.has("F") && !claimed.length) {
+      const value = words.get("F")! * scale
+      if (value > 0 && Number.isFinite(value)) feed = value
+    }
+    const sIsOverride = mCodes.some(
+      (m) => ![3, 4, 5, 6, 7, 8, 9, 30].includes(m)
+    )
+    if (words.has("S") && !sIsOverride) spindle = Math.max(0, words.get("S")!)
+    if (words.has("T")) selectedTool = words.get("T")!
+    for (const m of mCodes) {
+      if (firmware?.handles("M", m)) continue
+      if (m === 3 || m === 4) spindleRunning = true
+      else if (m === 5) spindleRunning = false
+      else if (m === 6) {
+        tool = selectedTool
+        tools.add(tool)
+      } else if (m === 2 || m === 30) stopped = true
+      else if (m === 220) {
+        // A feed override, in percent of the programmed feed.
+        const override = words.get("S")
+        if (override !== undefined && override > 0)
+          feedOverride = override / 100
+      }
+    }
+    if (firmware && claimed.length) {
+      const effect = firmware.run({
+        line,
+        gCodes,
+        mCodes,
+        words,
+        position: [...position],
+        scale,
+        absolute,
+        offset: [...offset],
+        motion,
+        feed,
+        tool,
+        selectedTool,
+      })
+      // A block the preview cannot follow is left out.
+      if (!effect) continue
+      for (const made of effect.moves) append(made.end, made.rapid, line, made)
+      if (effect.offset) offset = [...effect.offset]
+      if (effect.feed !== undefined) feed = effect.feed
+      if (effect.tool !== undefined) {
+        tool = effect.tool
+        tools.add(tool)
+      }
+      continue
+    }
+    // Words the preview does not know leave the block out.
+    if (
+      [...words.keys()].some(
+        (word) =>
+          ![
+            "X",
+            "Y",
+            "Z",
+            "I",
+            "J",
+            "R",
+            "F",
+            "S",
+            "T",
+            "N",
+            "O",
+            "P",
+            "L",
+            "H",
+            "D",
+          ].includes(word)
+      )
+    )
+      omitMotion = true
+    if (coordinateSet) {
+      ;(["X", "Y", "Z"] as const).forEach((axis, axisIndex) => {
+        if (words.has(axis))
+          offset[axisIndex] = position[axisIndex] - words.get(axis)! * scale
+      })
+    }
+    const hasAxes = ["X", "Y", "Z"].some((axis) => words.has(axis))
+    const hasArc = motion === 2 || motion === 3
+    if (
+      omitMotion ||
+      (!hasAxes && !(hasArc && ["I", "J", "R"].some((axis) => words.has(axis))))
+    )
+      continue
+    // Coordinates without a motion mode are left out.
+    if (motion === null) continue
+    const target: Point3 = [...position]
+    ;(["X", "Y", "Z"] as const).forEach((axis, axisIndex) => {
+      if (words.has(axis))
+        target[axisIndex] = absolute
+          ? words.get(axis)! * scale + offset[axisIndex]
+          : position[axisIndex] + words.get(axis)! * scale
+    })
+    if (!target.every(Number.isFinite)) continue
+    if (hasArc) {
+      // Only G17 arcs with relative centres are drawn; the tool still ends at the target.
+      const points =
+        plane === 17 && incrementalArcCenters
+          ? arcPoints(position, target, motion === 2, words, scale)
+          : null
+      if (!points) {
+        position = target
+        continue
+      }
+      for (const point of points) append(point, false, line)
+    } else append(target, motion === 0, line)
+  }
+
+  const min: Point3 = [Infinity, Infinity, Infinity]
+  const max: Point3 = [-Infinity, -Infinity, -Infinity]
+  for (const segment of segments) {
+    for (let axis = 0; axis < 3; axis++) {
+      min[axis] = Math.min(min[axis], segment.start[axis], segment.end[axis])
+      max[axis] = Math.max(max[axis], segment.start[axis], segment.end[axis])
+    }
+  }
+  if (segments.length === 0) {
+    min.fill(0)
+    max.fill(0)
+  }
+  return {
+    name: fileName,
+    source,
+    lines,
+    lineCount: lines.length,
+    segments,
+    bounds: {
+      min,
+      max,
+      size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]],
+    },
+    tools: [...tools].sort((a, b) => a - b),
+    unreadable: firstUnreadable && {
+      ...firstUnreadable,
+      count: unreadableCount,
+    },
+  }
+}

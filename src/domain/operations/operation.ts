@@ -1,0 +1,173 @@
+import { z } from "zod"
+import { utf8ByteLength } from "@/machine/contract"
+import { AutoLevelParamsSchema } from "../auto-level/params"
+import { AutoScanParamsSchema } from "../auto-scan/params"
+import { AutoZHeightParamsSchema } from "../auto-z-height/params"
+import {
+  EntityIdSchema,
+  TextSchema,
+  ToolNumberSchema,
+  newId,
+  normalizeText,
+} from "../primitives"
+
+const MiB = 1024 * 1024
+export const OPERATION_LIMITS = {
+  operationsPerPlate: 100,
+  /** NC text in UTF-8 bytes (`utf8ByteLength`), as it is stored and exchanged. */
+  ncBytes: 10 * MiB,
+  pluginDataBytes: 8 * MiB,
+} as const
+
+/** Control characters other than tab, line feed and carriage return. */
+function hasNcControlCharacter(nc: string): boolean {
+  for (let index = 0; index < nc.length; index++) {
+    const code = nc.charCodeAt(index)
+    if ((code < 32 && code !== 9 && code !== 10 && code !== 13) || code === 127)
+      return true
+  }
+  return false
+}
+
+/**
+ * NC text as stored: bounded in UTF-8 bytes (the measure storage limits it by), and free of
+ * control characters other than whitespace.
+ */
+export const NcSchema = z
+  .string()
+  .refine(
+    (nc) => utf8ByteLength(nc) <= OPERATION_LIMITS.ncBytes,
+    `The NC exceeds the ${OPERATION_LIMITS.ncBytes / MiB} MiB limit.`
+  )
+  .refine(
+    (nc) => !hasNcControlCharacter(nc),
+    "NC contains unsupported control characters."
+  )
+
+export const PhaseSchema = z.enum(["setup", "machining", "finish"])
+export type Phase = z.infer<typeof PhaseSchema>
+
+export const ParameterValuesSchema = z
+  .record(z.string().min(1).max(200), z.union([z.number(), z.boolean()]))
+  .refine((values) => Object.keys(values).length <= 20, "Too many parameters.")
+export type ParameterValues = z.infer<typeof ParameterValuesSchema>
+
+/**
+ * Maps a tool number the operation's own NC selects (`local`) to a number in the plate's
+ * tool table (`plate`). `null` on both sides is the implicit tool of NC that selects none.
+ */
+export const BindingSchema = z.object({
+  local: ToolNumberSchema.nullable(),
+  plate: ToolNumberSchema.nullable(),
+})
+export type Binding = z.infer<typeof BindingSchema>
+
+export const FileSourceSchema = z.object({
+  kind: z.literal("file"),
+  nc: NcSchema,
+  /**
+   * Whether the program's closing park runs: its park after the last move, such as the Z1's
+   * G28. Off, the operation contributes its NC without it. Files saved before this setting keep
+   * theirs.
+   */
+  park: z.boolean().default(true),
+})
+
+/** A declarative plugin template; `nc` is the last generated program. */
+export const TemplateSourceSchema = z.object({
+  kind: z.literal("template"),
+  pluginId: TextSchema,
+  programId: TextSchema,
+  version: TextSchema,
+  values: ParameterValuesSchema,
+  phase: PhaseSchema,
+  nc: NcSchema,
+})
+
+/** Plugin-owned data; `nc` is null until the plugin generates the program. */
+export const PluginSourceSchema = z.object({
+  kind: z.literal("plugin"),
+  pluginId: TextSchema,
+  version: TextSchema,
+  data: z.json(),
+  phase: PhaseSchema,
+  nc: NcSchema.nullable(),
+})
+
+/** Built-in auto-level: the probing NC is derived from these parameters when compiling. */
+export const AutoLevelSourceSchema = z.object({
+  kind: z.literal("auto-level"),
+  params: AutoLevelParamsSchema,
+})
+
+/** Built-in auto Z-height: the touch-off NC is derived from these parameters when compiling. */
+export const AutoZHeightSourceSchema = z.object({
+  kind: z.literal("auto-z-height"),
+  params: AutoZHeightParamsSchema,
+})
+
+/** Built-in auto-scan: traces the plate's toolpath bounds, derived when compiling. */
+export const AutoScanSourceSchema = z.object({
+  kind: z.literal("auto-scan"),
+  params: AutoScanParamsSchema,
+})
+
+export const OperationSourceSchema = z.discriminatedUnion("kind", [
+  FileSourceSchema,
+  TemplateSourceSchema,
+  PluginSourceSchema,
+  AutoLevelSourceSchema,
+  AutoZHeightSourceSchema,
+  AutoScanSourceSchema,
+])
+export type OperationSource = z.infer<typeof OperationSourceSchema>
+export type SourceKind = OperationSource["kind"]
+export type SourceOf<TKind extends SourceKind> = Extract<
+  OperationSource,
+  { kind: TKind }
+>
+
+export const OperationSchema = z.object({
+  id: EntityIdSchema,
+  name: TextSchema,
+  /** Increments on every change; plugins save against the revision they read. */
+  revision: z.int().nonnegative(),
+  /** Pause the program before this operation (a program stop the dialect maps). */
+  stopBefore: z.boolean(),
+  tools: z.array(BindingSchema).max(100),
+  source: OperationSourceSchema,
+})
+export type Operation = z.infer<typeof OperationSchema>
+
+/** The plugin an operation comes from, for template and plugin operations. */
+export function operationPluginId(operation: Operation): string | null {
+  const { source } = operation
+  return source.kind === "template" || source.kind === "plugin"
+    ? source.pluginId
+    : null
+}
+
+export function createOperation(
+  name: string,
+  source: OperationSource,
+  overrides: Partial<Pick<Operation, "id" | "stopBefore" | "tools">> = {}
+): Operation {
+  return {
+    id: overrides.id ?? newId(),
+    name: normalizeText(name) || "Operation",
+    revision: 0,
+    stopBefore: overrides.stopBefore ?? false,
+    tools: overrides.tools ?? [],
+    source,
+  }
+}
+
+/** Every change goes through this so plugin saves can detect conflicts. */
+export const revise = (
+  operation: Operation,
+  patch: Partial<Omit<Operation, "id" | "revision">>
+): Operation => ({
+  ...operation,
+  ...patch,
+  revision: operation.revision + 1,
+})

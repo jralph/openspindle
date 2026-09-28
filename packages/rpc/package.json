@@ -1,0 +1,16 @@
+{
+  "name": "@openspindle/rpc",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "description": "Typed, schema-validated RPC over message transports (Electron IPC, plugin frames, companions).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./message-port": "./src/message-port.ts",
+    "./ndjson": "./src/ndjson.ts"
+  },
+  "peerDependencies": {
+    "zod": "^4.6.5"
+  }
+}

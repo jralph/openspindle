@@ -1,0 +1,47 @@
+# Models
+
+The Models library holds uploaded CAD models. Fixtures place them on the bed ([workspace-model.md](workspace-model.md)).
+
+## Adding models
+
+**Models…** (in the app menu, or **Device → Fixtures → Models…**) lists the library. **Add models…** takes STEP (`.step`, `.stp`) and binary glTF (`.glb`) files up to 64 MB each, one after another, showing which file is being read, tessellated or saved; **Cancel** stops the running file. A file that cannot be added is named with its reason, and the others continue. A file the library already holds (the same bytes) is not added again.
+
+- **STEP** files are tessellated on this computer with OpenCascade ([occt-import-js](https://github.com/kovacsv/occt-import-js), WebAssembly) in a background worker, which loads only when a STEP file is added and ends after a minute without work, releasing its memory. The chord error is 0.1% of each top-level shape's size (0.1 mm for a 100 mm part) and curves turn at most 20° per facet, so holes and bosses keep at least 18 sides. Files convert one at a time; a 5 MB STEP file takes a few seconds, and a conversion that runs over five minutes is stopped. All solids become one mesh, in millimetres with Z up, whatever units the file uses.
+- **GLB** files must be glTF 2.0 with everything embedded: a model that refers to other files is refused.
+
+A display mesh is at most 32 MB and 1,000,000 triangles; a more detailed model is refused with a request to simplify it.
+
+Each model shows its type, its size (width × depth × height in millimetres), its triangles, its file size and where it is used. Its size is measured from its display mesh to the micrometre: the mesh keeps positions as floats in metres, which hold millimetres only to about 0.00001 mm (a STEP's 50.5 mm reads back as 50.50000176), so its box is rounded to three decimals. Millimetre and degree fields show three decimals throughout the app, and typed values are kept to three; a field left as shown keeps the value it has. Its name is renamed in place. **Delete** asks first and, when fixtures use the model, says how many: they show a box of the model's size until they get another model.
+
+## Storage and identity
+
+A model's id is the SHA-256 of its display mesh (the binary glTF), so the same model has the same id in every library and every file. The library keeps each model's record, its mesh and, for a STEP upload, the uploaded file, so its mesh can be rebuilt later. A GLB upload is its own mesh and is kept once.
+
+Each model is one folder in the app's data folder, `models/<id>/`, with `mesh.glb`, `source.step` for STEP uploads and `record.json`, written last so an interrupted add leaves no entry.
+
+The store verifies every entry it adds, whoever prepared it: the id is the digest of the mesh, the mesh is a valid, self-contained GLB with the triangles its record states, and the uploaded file has the size and digest its record states. The library holds at most 500 models. Adding a model it already holds keeps the stored one; a model that came with a project gains its uploaded file when the file is added again. A stored entry that can no longer be read is never overwritten: adding a model with its id is refused with the reason.
+
+## Fixtures
+
+A fixture definition (**Device → Fixtures**) draws a model bundled with OpenSpindle, a box, a library model, or nothing. A new one starts in the middle of the machine's bed, on the top of the bed fixture new plates have (on the Z1, the MDF bed's top at Z 6), or on the machine's bed without one. Choosing a library model puts the fixture's origin at the centre of the model's footprint, on its underside; a box is framed the same way, and its **Size** (width, depth and height) is set there too. The Z1's MDF wasteboard is a box. Plates keep a snapshot of the definitions they were set up with. A fixture whose library model is missing shows a translucent box of the model's size, and its definition says so.
+
+### Origin
+
+A fixture's origin is the point it is positioned by and turns about, and its mount points are measured from it. **Default position** names it (the kit's L-brackets by their outer corner, the top clamp by its slot's centre, a dowel pin by its centre, a library model by its bottom centre). Choosing another of the model's mount points there, such as a corner or a hole, makes that point the origin: the default position becomes that point's position, so the fixture stays where it is, and the mount points are measured from it. On a plate, a fixture is placed by its origin too: **Anchor** in Prepare → Fixtures names it and edits its bed position, and choosing another point there makes it the origin of that plate's fixture alone (its snapshot of the definition), which stays where it is and whose **Reset** still puts it where new plates do. A locked fixture keeps its origin until it is unlocked. The kit fixtures' own points move with a moved origin. A resized box keeps its origin at the same place in the box. A model without a point at its origin lists **Origin** until one is chosen.
+
+### Orientation
+
+A library model stands as its file has it: a part drawn with Y up, as Fusion draws it, stands on its edge. **Orientation** shows the model as it stands in the fixture, on the surface under it, with its origin's axes and its mount points. Clicking a face stands the model on that face (the face under the pointer is highlighted), **Turn** turns it 90° about Z, clockwise seen from above, to choose which side is its front, and **Reset** stands it as its file has it again. The model's box, and with it its size, its front-left bottom and its other box points, is then of the model as it stands; the origin keeps its place in the box (the bottom centre stays the bottom centre), and points defined for the model stay on the model. As the face clicked is the one the fixture rests on, choosing an orientation sets the default rotation's X and Y back to 0. The definition keeps the turn in its model (`orientation`, degrees in Euler XYZ order like fixture rotations), and plates draw the model turned. The preview draws only while its definition is open.
+
+### Built-in fixtures
+
+OpenSpindle's own fixtures are classes in `src/domain/fixtures/`. A `Fixture` holds its model and frame, colour, finish (how shiny its model is drawn; without one, beds and wasteboards are matte and other fixtures a little metallic), default placement and mount points, and gives the definition a profile holds. A `MachineBed` is a machine's own bed: its model, finish, box and holes. A `FixtureKit` is what a kind of machine is and comes with: the device models it is for, its picture (on the Connect device card), its work area (new plates centre their stock in it, and stock is edited up to its size), its bed (the 3D view draws each plate set up for the machine on it, with its grid and outline from its box), its probe (the probing operations' NC, defaults and ranges; see [auto-level](auto-level.md)), its fixtures with the kit version each was added, corrected or recoloured in, and its factory anchors. Generic code holds no machine's numbers; it asks the kit. The Makera Z1's kit (`MakeraZ1`) is `src/domain/fixtures/makera-z1/`, one class per part: `Z1Bed`, `Z1MdfBed`, `Z1LBracketThick` and `Z1LBracketThin`, `Z1TopClamp`, `Z1FourthAxis`, `Z1DowelPin` and `Z1MdfWasteboard`; the L-brackets and the top clamp are machined aluminium, lighter and shinier than the steel dowel pins. `catalog.ts` lists the kits: a device's first profile comes from its model's kit, a profile made from an earlier kit version gains the fixtures added and corrected since, and a new kit colour where it still has one the kit gave before (a colour the user chose stays), and a bundled model's points and finish are found through the fixture that draws it.
+
+### Mount points
+
+A fixture's model carries mount points: named points in the fixture's frame (millimetres from its origin, before rotation) that moves in the 3D view snap to and align by. The bundled models have theirs, measured from their STEP sources: the bed's M5 and dowel pin holes, the MDF bed's holes, the L-brackets' inner and outer corners, dowel and screw holes (on their underside), the top clamp's slot centres (on its underside) and the inner edge of each step under it (where the stock's top edge goes), the 4th axis's chuck face and tailstock centre on its rotation axis, and a dowel pin's centre where it stands in the bed surface (to drop onto a dowel hole). Any other model starts with the corners and centres of its box. **Device → Fixtures → Mount points** defines a definition's own points (name, X, Y, Z); **Use the model's points** goes back to the model's. Choosing another model starts from that model's points. Plates keep the points with their snapshot of the definition.
+
+## Projects and exported NC
+
+- A saved project embeds the library models its fixtures use: each model's record and mesh, not the uploaded file ([step-nc-projects.md](step-nc-projects.md#models)). Opening the project adds them to the library.
+- Exported NC files ([plate-definition.md](plate-definition.md)) refer to models by id only.

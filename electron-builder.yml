@@ -1,0 +1,56 @@
+# Everything is bundled by electron-vite into out/; no runtime node_modules ship.
+appId: com.openspindle.desktop
+productName: OpenSpindle
+directories:
+  output: release
+files:
+  - out/**
+# The About panel's credits, which production builds keep in build/third-party-notices.json, and the
+# licenses of Electron and of the Chromium, Node.js and other software it includes, which they refer to.
+extraResources:
+  - from: build/third-party-notices.json
+    to: third-party-notices.json
+  - from: node_modules/electron/dist/LICENSE
+    to: LICENSE.electron.txt
+# Writes LICENSES.chromium.txt: Electron's LICENSES.chromium.html (20 MB) with each text it repeats
+# printed once, about 1.5 MB.
+afterPack: ./tools/packaging/chromium-licenses.ts
+# Signed with the Developer ID Application certificate named by CSC_NAME in .env or, in CI,
+# imported from CSC_LINK (docs/releasing.md), with hardened runtime and electron-builder's default
+# entitlements. Fail rather than produce an unsigned app when it is missing; npm run package:mac
+# signs ad-hoc instead.
+forceCodeSigning: true
+# Electron's fuses, flipped before signing so that the signature covers them. The app loads only
+# its own app.asar, checked against the hash in Info.plist, and runs no code handed to it through
+# ELECTRON_RUN_AS_NODE, NODE_OPTIONS, --inspect or SIGUSR1 (plugin companions are utility
+# processes, which need none of them). The renderer comes from app://, so file:// pages get no
+# extra privileges. Cookies stay unencrypted: the app keeps none worth protecting, and on macOS
+# their key would live in the keychain, which asks for access again after every ad-hoc build.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
+  enableCookieEncryption: false
+# Installed apps update from this repository's GitHub releases (electron/main/updates.ts): builds
+# write latest-mac.yml beside the artifacts and app-update.yml into the app. Owner and repo come
+# from the git remote; without one, a build leaves both out and cannot update.
+publish:
+  provider: github
+mac:
+  category: public.app-category.productivity
+  # The interface is English, so only Chromium's English resources ship: 50 MB less than its 220
+  # translations. Chromium's locale is then en-US on every Mac, as are macOS's own dialogs.
+  electronLanguages: [en]
+  # Nothing native ships, so one universal build covers Apple silicon and Intel: the DMG for
+  # installing, the zip for updates (Squirrel.Mac installs from it).
+  target:
+    - target: dmg
+      arch: universal
+    - target: zip
+      arch: universal
+  extendInfo:
+    NSLocalNetworkUsageDescription: OpenSpindle finds and controls CNC machines on your local network.
+    LSAppNapIsDisabled: true

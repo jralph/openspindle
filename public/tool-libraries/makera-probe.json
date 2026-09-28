@@ -1,0 +1,93 @@
+{
+  "format": "openspindle-tool-library",
+  "version": 2,
+  "units": "mm",
+  "tools": [
+    {
+      "schemaVersion": 4,
+      "id": "makera-wired-probe-2",
+      "name": "Makera Wired Probe 2.0",
+      "kind": "probe",
+      "diameter": 1.5,
+      "flutes": null,
+      "vendor": "Makera",
+      "productId": null,
+      "productLink": null,
+      "vendorDescription": null,
+      "material": null,
+      "grade": null,
+      "coating": null,
+      "notes": "Wired touch probe with its 1/8″ shank adapter fitted. Dimensions are estimated from Makera's product photos; calibrated offsets are unspecified.",
+      "image": null,
+      "model": "/models/makera-wired-probe-2.glb",
+      "geometry": {
+        "shankDiameter": 3.175,
+        "fluteLength": null,
+        "overallLength": 56,
+        "bodyLength": 45.5,
+        "shoulderLength": 4,
+        "shoulderDiameter": 1.5,
+        "tipDiameter": null,
+        "tipLength": null,
+        "pointAngle": null,
+        "taperAngle": null,
+        "cornerRadius": null,
+        "assemblyGaugeLength": null,
+        "numberOfTeeth": null,
+        "threadPitchMin": null,
+        "threadPitchMax": null,
+        "threadProfileAngle": null,
+        "handedness": null,
+        "maxDiameter": null,
+        "upperRadius": null,
+        "taperedTip": null,
+        "threadTip": null,
+        "coolantThrough": null
+      },
+      "holder": null,
+      "shaft": {
+        "segments": [
+          {
+            "height": 1.5,
+            "upperDiameter": 6,
+            "lowerDiameter": 3.5
+          },
+          {
+            "height": 15,
+            "upperDiameter": 6,
+            "lowerDiameter": 6
+          },
+          {
+            "height": 24,
+            "upperDiameter": 12,
+            "lowerDiameter": 12
+          },
+          {
+            "height": 1,
+            "upperDiameter": 8,
+            "lowerDiameter": 8
+          }
+        ]
+      },
+      "presets": [],
+      "postProcess": {
+        "number": 0,
+        "diameterOffset": null,
+        "lengthOffset": null,
+        "turret": null,
+        "manualToolChange": null,
+        "breakControl": null,
+        "liveTool": null,
+        "comment": null
+      },
+      "source": {
+        "format": "native",
+        "fileName": null,
+        "unit": null,
+        "raw": {
+          "builtinId": "makera-wired-probe-2"
+        }
+      }
+    }
+  ]
+}

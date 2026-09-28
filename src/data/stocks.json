@@ -1,0 +1,38 @@
+[
+  {
+    "id": "birch",
+    "name": "Birch plywood",
+    "material": "Wood",
+    "width": 100,
+    "depth": 80,
+    "height": 8,
+    "color": "#cbaa73"
+  },
+  {
+    "id": "aluminum",
+    "name": "Aluminum 6061",
+    "material": "Metal",
+    "width": 100,
+    "depth": 100,
+    "height": 6,
+    "color": "#a9b3c0"
+  },
+  {
+    "id": "acrylic",
+    "name": "Clear acrylic",
+    "material": "Plastic",
+    "width": 120,
+    "depth": 100,
+    "height": 5,
+    "color": "#b8d2d8"
+  },
+  {
+    "id": "pcb",
+    "name": "PCB",
+    "material": "PCB",
+    "width": 100,
+    "depth": 100,
+    "height": 1.6,
+    "color": "#b87542"
+  }
+]

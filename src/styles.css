@@ -1,0 +1,30 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/space-grotesk";
+/* Latin only: numbers and G-code need no more, and the plugin frame inlines every face. */
+@import "@fontsource/space-mono/latin-400.css";
+@import "./theme.css";
+
+/* Space Mono's digits, signs and separators alone: numbers in it keep Space Grotesk's words. */
+@font-face {
+  font-family: "Space Mono Numerals";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/space-mono/files/space-mono-latin-400-normal.woff2")
+    format("woff2");
+  unicode-range: U+002B-002E, U+0030-003A, U+2212;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}

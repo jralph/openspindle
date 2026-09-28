@@ -1,0 +1,206 @@
+import type {
+  AnchorConfiguration,
+  ConnectRequest,
+  ConsoleEntry,
+  DisconnectRequest,
+  HeightMap,
+  MachineCommand,
+  MachineSnapshot,
+  NetworkDevice,
+  PrepareResult,
+  RunRequest,
+} from "@/machine/contract"
+import type { ParamsOut } from "@openspindle/rpc"
+import type {
+  CompanionHealth,
+  CompanionStatus,
+  JsonValue,
+  PluginViewContract,
+  ProcessParameterValues,
+} from "@openspindle/plugin-core"
+import type { ModelStore } from "@/persistence/models/model-library"
+import type {
+  FileKind,
+  OpenFileResult,
+  SaveFileRequest,
+  SaveFileResult,
+} from "./contract/files"
+import type { CameraEvent } from "./contract/machine-rpc"
+import type {
+  CompanionEvent,
+  CompanionLogEntry,
+  InstallRequest,
+  PluginBundle,
+  PluginSummary,
+  PrepareInstallResult,
+} from "./contract/plugin-rpc"
+import type { BackupResult, StorageKey } from "./contract/storage"
+import type { MenuCommand } from "./contract/menu"
+import type {
+  DiagnosticsSettings,
+  DiagnosticsStatus,
+  LogRecord,
+  MainError,
+} from "./contract/diagnostics"
+
+/** Machine access through the main process's machine controller. */
+export interface MachineHost {
+  snapshot: () => Promise<MachineSnapshot>
+  subscribe: (listener: (snapshot: MachineSnapshot) => void) => () => void
+  discover: () => Promise<NetworkDevice[]>
+  connect: (request: ConnectRequest) => Promise<MachineSnapshot>
+  disconnect: (request: DisconnectRequest) => Promise<MachineSnapshot>
+  execute: (command: MachineCommand) => Promise<MachineSnapshot>
+  stop: () => Promise<MachineSnapshot>
+  /** Reboots the machine's controller, then connects to it again. */
+  reset: () => Promise<MachineSnapshot>
+  prepare: (source: string) => Promise<PrepareResult>
+  run: (request: RunRequest) => Promise<MachineSnapshot>
+  dismissJob: () => Promise<MachineSnapshot>
+  readAnchors: (signal?: AbortSignal) => Promise<AnchorConfiguration>
+  readHeightMap: (signal?: AbortSignal) => Promise<HeightMap>
+  watchCamera: (listener: (event: CameraEvent) => void) => () => void
+  /** The machine console: its backlog at once, then new entries in batches. */
+  watchConsole: (listener: (entries: ConsoleEntry[]) => void) => () => void
+}
+
+/** Durable documents: files in the app's data folder. */
+export interface StoragePort {
+  read: (key: StorageKey) => Promise<string | null>
+  write: (key: StorageKey, value: string) => Promise<void>
+  /** Keeps a copy of the stored document; null when nothing was stored. */
+  backup: (key: StorageKey) => Promise<BackupResult>
+  remove: (key: StorageKey) => Promise<void>
+}
+
+export interface FileHost {
+  open: (kind: FileKind) => Promise<OpenFileResult>
+  save: (request: SaveFileRequest) => Promise<SaveFileResult>
+}
+
+export interface MenuHost {
+  subscribe: (listener: (command: MenuCommand) => void) => () => void
+}
+
+/**
+ * The app window; the workspace is kept only across reloads of its page, so leaving it with
+ * unsaved changes asks first.
+ */
+export interface WindowHost {
+  /**
+   * Whether the project has unsaved changes, and its name. Resolves once the window knows, so a
+   * caller can retry a report it rejects.
+   */
+  setEdited: (edited: boolean, name: string) => Promise<void>
+  /** Closes the window without asking again: its changes were saved. */
+  close: () => void
+  /**
+   * Fire and forget, as the page goes away: the workspace (JSON) for the page a reload brings,
+   * or null for none. Sent at once, so it arrives even while the page unloads.
+   */
+  keepWorkspace: (workspace: string | null) => void
+  /** The workspace the window's previous page kept, if any. */
+  keptWorkspace: () => Promise<string | null>
+}
+
+/** The app's log and error reports, kept by the main process. */
+export interface DiagnosticsHost {
+  status: () => Promise<DiagnosticsStatus>
+  updateSettings: (
+    patch: Partial<DiagnosticsSettings>
+  ) => Promise<DiagnosticsSettings>
+  /** Fire and forget: logging never holds anything up. */
+  log: (records: LogRecord[]) => void
+  /** The end of the log, to attach to a report. */
+  readLog: () => Promise<string>
+  /** Saves the log where the user chooses. */
+  exportLog: () => Promise<SaveFileResult>
+  /** Sends an error the user reports (it went already when reports are automatic). */
+  sendError: (eventId: string) => Promise<void>
+  /** Errors of the main process, as they happen. */
+  watchMainErrors: (listener: (error: MainError) => void) => () => void
+}
+
+type ViewParams<TMethod extends keyof PluginViewContract["methods"]> =
+  ParamsOut<PluginViewContract, TMethod>
+
+/** Plugin-scoped services of the main process, which applies the plugin's own grants. */
+export interface PluginServicesPort {
+  machineSnapshot: (pluginId: string) => Promise<MachineSnapshot>
+  readAnchors: (
+    pluginId: string,
+    signal: AbortSignal
+  ) => Promise<AnchorConfiguration>
+  readHeightMap: (pluginId: string, signal: AbortSignal) => Promise<HeightMap>
+  machineAccessory: (
+    pluginId: string,
+    request: ViewParams<"machine.accessory">
+  ) => Promise<MachineSnapshot>
+  subscribeMachine: (
+    pluginId: string,
+    listener: (snapshot: MachineSnapshot) => void
+  ) => () => void
+  companionCall: (
+    pluginId: string,
+    request: ViewParams<"companion.call">,
+    signal: AbortSignal
+  ) => Promise<JsonValue>
+  companionStatus: (pluginId: string) => Promise<CompanionStatus>
+  companionSetup: (
+    pluginId: string,
+    signal: AbortSignal
+  ) => Promise<CompanionHealth>
+  /** Holds the companion (on-view companions start) while subscribed. */
+  subscribeCompanion: (
+    pluginId: string,
+    listener: (event: CompanionEvent) => void
+  ) => () => void
+}
+
+/** What the plugin manager shows and does for companions; the status is in each summary. */
+export interface CompanionControl {
+  logs: (pluginId: string) => Promise<CompanionLogEntry[]>
+  restart: (pluginId: string) => Promise<CompanionStatus>
+  setup: (pluginId: string) => Promise<CompanionHealth>
+}
+
+export type RenderedProgram = { readonly name: string; readonly source: string }
+
+/**
+ * Installed plugins: the registry of the main process. Installs go through the plugin-core
+ * pipeline, with a review first.
+ */
+export interface PluginHost {
+  list: () => Promise<PluginSummary[]>
+  /** Delivers the whole list once subscribed and again after every change. */
+  subscribe: (listener: (plugins: PluginSummary[]) => void) => () => void
+  prepareInstall: (request: InstallRequest) => Promise<PrepareInstallResult>
+  prepareUpdate: (pluginId: string) => Promise<PrepareInstallResult>
+  confirmInstall: (reviewId: string) => Promise<PluginSummary>
+  discardInstall: (reviewId: string) => Promise<void>
+  setEnabled: (pluginId: string, enabled: boolean) => Promise<PluginSummary>
+  remove: (pluginId: string) => Promise<void>
+  /** The verified view bundle a plugin frame starts with. */
+  readBundle: (pluginId: string) => Promise<PluginBundle>
+  /** Renders a template program from the installed, verified template. */
+  renderProgram: (
+    pluginId: string,
+    programId: string,
+    values: ProcessParameterValues
+  ) => Promise<RenderedProgram>
+  readonly companions: CompanionControl
+  /** Plugin-scoped machine and companion calls for views. */
+  readonly services: PluginServicesPort
+}
+
+/** The main process, as the renderer reaches it: every service is a typed RPC call. */
+export interface Host {
+  readonly machine: MachineHost
+  readonly files: FileHost
+  readonly storage: StoragePort
+  readonly models: ModelStore
+  readonly menu: MenuHost
+  readonly window: WindowHost
+  readonly plugins: PluginHost
+  readonly diagnostics: DiagnosticsHost
+}

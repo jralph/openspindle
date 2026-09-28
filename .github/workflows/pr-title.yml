@@ -1,0 +1,26 @@
+# A pull request's title becomes the subject of its squash-merged commit on main, which
+# release-please reads to choose the next version and write the release notes (docs/releasing.md).
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  title:
+    name: PR title
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check that the title is a Conventional Commit
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|perf|revert|docs|style|refactor|test|build|ci|chore)(\([a-z0-9-]+\))?!?: [^ ]'
+          if [[ "$TITLE" =~ $pattern ]]; then
+            exit 0
+          fi
+          echo "::error::The title must read <type>: <what changed>, such as \"feat: Auto-level probes a grid over the plate's toolpath bounds\". Types: feat, fix, perf and revert appear in the release notes; docs, style, refactor, test, build, ci and chore do not. See Pull requests in README.md."
+          exit 1
