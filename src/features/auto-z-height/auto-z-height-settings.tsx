@@ -1,12 +1,7 @@
 import { useId, useState } from "react"
 import { LocateFixed } from "lucide-react"
-import {
-  FieldDescription,
-  FieldGroup,
-  FieldLegend,
-  FieldSet,
-} from "@/components/ui/field"
-import type { AnchorPlacement } from "@/domain/auto-level/params"
+import { FieldGroup, FieldLegend, FieldSet } from "@/components/ui/field"
+import { Hint } from "@/components/workspace/hint"
 import { centerAutoZHeight, workAreaMiddle } from "@/domain/auto-z-height/fit"
 import {
   AUTO_Z_HEIGHT_FIELDS,
@@ -31,6 +26,7 @@ import type {
   ProbingAnchorOption,
   WorkAreaFit,
 } from "@/features/probing/probing-form"
+import type { AnchorPlacement } from "@/domain/probing/placement"
 
 export type AutoZHeightSettingsProps = {
   value: AutoZHeightParams
@@ -109,11 +105,11 @@ function AutoZHeightForm({
   return (
     <FieldGroup>
       <FieldSet>
-        <FieldLegend variant="label">Touch-off</FieldLegend>
-        <FieldDescription>
-          The probed surface becomes work Z0, and the plate's work origin stays
-          on the stock top.
-        </FieldDescription>
+        <FieldLegend>
+          <Hint text="The probed surface becomes work Z0, and the plate's work origin stays on the stock top.">
+            Touch-off
+          </Hint>
+        </FieldLegend>
         <FieldGroup className="gap-3">
           <NumericFields
             id={id}
@@ -127,17 +123,11 @@ function AutoZHeightForm({
         </FieldGroup>
       </FieldSet>
       <PlacementFields
-        id={id}
         placement={probingField(form, "placement")}
-        anchorId={probingField(form, "placement.anchorId")}
-        offsetX={probingField(form, "placement.offset.x")}
-        offsetY={probingField(form, "placement.offset.y")}
         anchors={anchors}
         lastAnchor={lastAnchor}
         setLastAnchor={setLastAnchor}
         disabled={disabled}
-        probeDescription="Touches straight below where the probe is when the job starts: position it above the point to measure before Run. A probe change returns above it at the firmware's clearance height."
-        anchorDescription="The machine rises to its clearance height, travels to the anchor plus the offset, then touches the surface below."
         action={(placement, setPlacement) => (
           <WorkAreaField
             description={centerDescription(workArea)}

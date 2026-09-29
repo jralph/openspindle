@@ -51,12 +51,13 @@ import {
 } from "@/components/ui/table"
 import { ToolImage } from "@/components/workspace/tool-image"
 import { catalogForTool } from "@/app/tools/tool-catalog-store"
+import { hasToolPicture } from "@/app/tools/tool-picture-cache"
 import type { LoadedToolCatalog } from "@/app/tools/tool-catalog-store"
 import { toolKindKey } from "@/domain/tools/tool"
 import type { Tool } from "@/domain/tools/tool"
 import { formatShankDiameter, formatToolNumber } from "@/domain/tools/format"
 import { OptionSelect } from "@/components/option-select"
-import { THUMBNAIL, ToolPicture, hasToolPicture } from "./tool-picture"
+import { THUMBNAIL, ToolPicture } from "./tool-picture"
 import { compareToolNames, toolKindLabel } from "./tool-format"
 
 /** Catalog scopes besides a packaged catalog's id. */
