@@ -53,8 +53,8 @@ type ProbingParams<TKind extends SourceKind> = TKind extends "auto-level"
 
 /**
  * Strategy per operation source kind: how it becomes NC, its phase, and whether a lone
- * operation may be emitted byte-for-byte. New kinds register here; nothing else switches on
- * plugin ids. Kinds resolve with the kit of the plate's machine (`kitForPlate`): its probe
+ * operation may be emitted byte-for-byte. New kinds register here.
+ * Kinds resolve with the kit of the plate's machine (`kitForPlate`): its probe
  * measures for the probing kinds, which also give the UI their availability and defaults here
  * (`available`, `defaults`), so it never reads a probe or a default kit itself. The operation
  * and run rules check an operation while editing and before Run.
@@ -98,32 +98,23 @@ const fileKind: OperationKind<"file"> = {
   label: "NC file",
   verbatim: true,
   generated: false,
-  phase: () => "machining",
+  phase: ({ source }) => source.phase ?? "machining",
   resolve: ({ source }, _plate, kit) =>
     ok(plain(source.park ? source.nc : withoutClosingPark(source.nc, kit))),
 }
 
-const templateKind: OperationKind<"template"> = {
-  kind: "template",
-  label: "Plugin program",
+const pcbKind: OperationKind<"pcb"> = {
+  kind: "pcb",
+  label: "PCB",
   verbatim: true,
   generated: false,
-  phase: (operation) => operation.source.phase,
-  resolve: (operation) => ok(plain(operation.source.nc)),
-}
-
-const pluginKind: OperationKind<"plugin"> = {
-  kind: "plugin",
-  label: "Plugin operation",
-  verbatim: true,
-  generated: false,
-  phase: (operation) => operation.source.phase,
+  phase: () => "machining",
   resolve: (operation) =>
     operation.source.nc === null
       ? fail(
           error(
             "operation-pending",
-            `Generate "${operation.name}" in its plugin before running it.`,
+            `Generate the toolpath for "${operation.name}" before running it.`,
             {
               subject: operationSubject(operation.id),
               fix: { kind: "edit-operation", operationId: operation.id },
@@ -131,6 +122,22 @@ const pluginKind: OperationKind<"plugin"> = {
           )
         )
       : ok(plain(operation.source.nc)),
+}
+
+const unsupportedKind: OperationKind<"unsupported"> = {
+  kind: "unsupported",
+  label: "Unavailable operation",
+  verbatim: false,
+  generated: false,
+  phase: ({ source }) => source.phase,
+  resolve: (operation) =>
+    fail(
+      error(
+        "operation-unsupported",
+        `"${operation.name}" has no generated NC and its source is no longer supported. Replace or remove this operation before running the plate.`,
+        { subject: operationSubject(operation.id) }
+      )
+    ),
 }
 
 /**
@@ -300,8 +307,8 @@ export const OPERATION_KINDS: {
   readonly [TKind in SourceKind]: OperationKind<TKind>
 } = {
   file: fileKind,
-  template: templateKind,
-  plugin: pluginKind,
+  pcb: pcbKind,
+  unsupported: unsupportedKind,
   "auto-level": autoLevelKind,
   "auto-z-height": autoZHeightKind,
   "auto-scan": autoScanKind,

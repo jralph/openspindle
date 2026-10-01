@@ -4,10 +4,10 @@ import { PlateSchema } from "@/domain/plate/plate"
 import { EntityIdSchema, TextSchema } from "@/domain/primitives"
 import { RuleSettingsSchema } from "@/domain/rules/settings"
 import { libraryOf } from "@/domain/workspace/library"
-import { PluginReferenceSchema } from "@/domain/workspace/plugin-reference"
 import type { WorkspaceState } from "@/domain/workspace/workspace"
 import { ruleSettingsFromDesignRules } from "@/formats/project/rule-settings"
 import { PROJECT_LIMITS } from "@/formats/project/step-nc"
+import { upgradeWorkspaceSources } from "@/formats/project/upgrade"
 import { KEPT_WORKSPACE_MAX_LENGTH } from "@/platform/contract/window"
 import type { WindowHost } from "@/platform/host"
 import { log } from "@/app/errors/log"
@@ -53,7 +53,6 @@ const KeptSchema = z.preprocess(
     project: z.object({
       name: TextSchema,
       fileName: z.string().min(1).max(1000),
-      plugins: z.array(PluginReferenceSchema).max(PROJECT_LIMITS.plugins),
     }),
     unsaved: z.boolean(),
   })
@@ -79,7 +78,7 @@ function restore(workspace: WorkspaceStore, text: string): boolean {
   } catch {
     // Read as nothing, which the schema refuses.
   }
-  const read = KeptSchema.safeParse(data)
+  const read = KeptSchema.safeParse(upgradeWorkspaceSources(data))
   if (!read.success) {
     log.warn(
       `The workspace kept across the reload does not read, so a new project starts.\n${z.prettifyError(read.error)}`

@@ -80,7 +80,7 @@ export function planAutoLevel(
 
 /**
  * The anchored grid's machine start from the plate's anchor snapshot. Issues keep the order of the
- * plugin-era checks: snapshot, anchor, coordinate range.
+ * placement checks: snapshot, anchor, coordinate range.
  */
 export function resolveAnchorStart(
   placement: AnchorPlacement,

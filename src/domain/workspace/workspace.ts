@@ -30,7 +30,6 @@ import {
   sameRuleSettings,
   savedRuleSettings,
 } from "../rules/settings"
-import type { PluginReference } from "./plugin-reference"
 import type { Point3, Result } from "../primitives"
 import {
   assignOperationTools,
@@ -41,15 +40,10 @@ import {
   renumberTool,
 } from "../tools/tool-table"
 
-/** The project the workspace holds: its name, file and the plugins it refers to. */
+/** The project the workspace holds: its name and file. */
 export type WorkspaceProject = {
   readonly name: string
   readonly fileName: string
-  /**
-   * The references of the project as last opened or saved. They keep describing plugins
-   * that are not installed, so saving again never forgets where those came from.
-   */
-  readonly plugins: readonly PluginReference[]
 }
 
 /** Everything the user works on; derived data (compiled programs) is never stored here. */
@@ -214,10 +208,9 @@ export type WorkspaceCommand =
       readonly defaultStockId?: string | null
     }
   | {
-      /** Saved as a project file, which refers to these plugins. */
+      /** Saved as a project file. */
       readonly type: "project.saved"
       readonly fileName: string
-      readonly plugins: readonly PluginReference[]
     }
   | { readonly type: "heightMap.store"; readonly map: HeightMap }
   /**
@@ -268,7 +261,7 @@ function updateOperation(
   if (!plate || !operation) return fail("The operation no longer exists.")
   const updated = update(operation, plate)
   if (!updated.ok) return updated
-  // Nothing changed: keep the plate as it was, so a plugin's own concurrent save is no conflict.
+  // Nothing changed: keep the plate as it was, so a concurrent editor save is no conflict.
   if (updated.value === operation && !plate.example) return ok(state)
   const next: Plate = {
     ...plate,
@@ -654,7 +647,6 @@ function commandResult(
         project: {
           ...state.project,
           fileName: command.fileName,
-          plugins: command.plugins,
         },
       })
     case "heightMap.store":

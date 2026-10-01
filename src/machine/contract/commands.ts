@@ -139,13 +139,6 @@ export const COMMAND_KINDS = [
   "confirmToolChange",
 ] as const satisfies readonly CommandKind[]
 
-/** The only commands a plugin may send (with machine:accessories); nothing that moves or cuts. */
-export const PLUGIN_ACCESSORY_KINDS = [
-  "light",
-  "beep",
-  "vacuum",
-] as const satisfies readonly CommandKind[]
-
 /** Admitted while a program streams; verified by telemetry only, never by acknowledgements. */
 export const JOB_CONCURRENT_COMMANDS: ReadonlySet<CommandKind> = new Set([
   "light",

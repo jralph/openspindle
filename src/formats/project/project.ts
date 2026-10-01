@@ -7,10 +7,8 @@ import type { Result } from "@/domain/primitives"
 import { describePath, readOptimistically } from "../optimistic-read"
 import { PROJECT_SCHEMA_VERSION, ProjectDocumentSchema } from "./document"
 import type { ProjectDocument } from "./document"
-import { missingPlugins } from "./plugin-reference"
-import type { InstalledPluginInfo } from "./plugin-reference"
+import { retainedSourceField, upgradeWorkspaceSources } from "./upgrade"
 import { ruleSettingsFromDesignRules } from "./rule-settings"
-import type { PluginReference } from "@/domain/workspace/plugin-reference"
 import { decodeStepNc, encodeStepNc } from "./step-nc"
 import type {
   RestoredPayload,
@@ -18,15 +16,8 @@ import type {
   StepNcInstruction,
 } from "./step-nc"
 
-export type ProjectOpenContext = {
-  /** Installed plugins; referenced plugins that are not among them are reported missing. */
-  readonly plugins: readonly InstalledPluginInfo[]
-}
-
 export type OpenedProject = {
   readonly document: ProjectDocument
-  /** References whose plugin is not installed, to offer installing them. */
-  readonly missingPlugins: readonly PluginReference[]
   /** Where the file holds data the document does not keep, such as fields this version does not recognize. */
   readonly leftOut: readonly string[]
 }
@@ -89,24 +80,23 @@ export function encodeProject(document: ProjectDocument): string {
 
 const VersionSchema = z.looseObject({ schemaVersion: z.int().positive() })
 
-/** The earliest format read; it and the ones after it become the current one on opening. */
-const EARLIEST_SCHEMA_VERSION = 4
+/** The oldest format that can be upgraded on opening. */
+const MINIMUM_SCHEMA_VERSION = 4
 
-/**
- * A payload of an earlier format as the current format holds it: formats 4 and 5 saved design
- * rules (`designRules`), which become rule settings; the rest reads as it is.
- */
+/** Earlier projects keep their rule settings, converting named design rules when needed. */
 function currentPayload(payload: Record<string, unknown>) {
-  const { designRules, ...rest } = payload
+  const { designRules, ...data } = payload
   return {
-    ...rest,
+    ...data,
     schemaVersion: PROJECT_SCHEMA_VERSION,
-    ruleSettings: ruleSettingsFromDesignRules(designRules),
+    ruleSettings: Object.hasOwn(data, "ruleSettings")
+      ? data.ruleSettings
+      : ruleSettingsFromDesignRules(designRules),
   }
 }
 
 /**
- * Projects of this format and the two before it are read; `saved` is the NC the file attaches
+ * Projects of this version and compatible earlier versions are read; `saved` is the NC the file attaches
  * to each instruction. The document is read optimistically: what the schema upgrades or
  * normalises is taken as it returns it, and data it does not recognize is left out and
  * reported rather than refused.
@@ -123,15 +113,26 @@ function readPayload(
     throw new Error(
       `This project was saved by a newer version of OpenSpindle (project format ${schemaVersion}). Update OpenSpindle to open it.`
     )
-  if (schemaVersion < EARLIEST_SCHEMA_VERSION)
+  if (schemaVersion < MINIMUM_SCHEMA_VERSION)
     throw new Error(
       `This project was saved by an earlier version of OpenSpindle (project format ${schemaVersion}), which this version cannot open.`
     )
+  // Rule settings move to different paths: read the converted fields optimistically there.
   const current =
-    schemaVersion === PROJECT_SCHEMA_VERSION
-      ? payload
-      : currentPayload(payload as Record<string, unknown>)
-  const read = readOptimistically(ProjectDocumentSchema, current)
+    schemaVersion < PROJECT_SCHEMA_VERSION
+      ? currentPayload(payload as Record<string, unknown>)
+      : payload
+  const schema =
+    schemaVersion < PROJECT_SCHEMA_VERSION
+      ? z.preprocess((value) => {
+          const { plugins: _plugins, ...data } = value as Record<
+            string,
+            unknown
+          >
+          return upgradeWorkspaceSources(data)
+        }, ProjectDocumentSchema)
+      : ProjectDocumentSchema
+  const read = readOptimistically(schema, current)
   if (!read.success)
     throw new Error(
       `The project data is invalid: ${z.prettifyError(read.error)}`
@@ -139,7 +140,20 @@ function readPayload(
   return {
     value: {
       document: read.data,
-      leftOut: read.leftOut.map((path) => describePath(current, path)),
+      leftOut: read.leftOut
+        .filter((path) => {
+          if (
+            schemaVersion === PROJECT_SCHEMA_VERSION ||
+            path[0] !== "plates" ||
+            typeof path[1] !== "number"
+          )
+            return true
+          return !retainedSourceField(
+            read.data.plates[path[1]]?.operations ?? [],
+            path.slice(2)
+          )
+        })
+        .map((path) => describePath(current, path)),
     },
     archive: projectArchive(read.data, saved),
   }
@@ -150,16 +164,12 @@ function readPayload(
  * project is a failure with a user-facing message. Data this version does not recognize is left
  * out of the document and listed in `leftOut`.
  */
-export function decodeProject(
-  text: string,
-  context: ProjectOpenContext
-): Result<OpenedProject> {
+export function decodeProject(text: string): Result<OpenedProject> {
   try {
     const { document, leftOut } = decodeStepNc(text, readPayload)
     return ok({
       document,
       leftOut,
-      missingPlugins: missingPlugins(document.plugins, context.plugins),
     })
   } catch (error) {
     return fail(

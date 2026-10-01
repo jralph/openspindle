@@ -39,9 +39,7 @@ import {
   HeightMapFacts,
   HeightMapGrid,
 } from "@/components/workspace/height-map-grid"
-import { operationKindLabel } from "@/features/plugins/use-operation-kind-label"
-import type { PluginSummary } from "@/platform/contract/plugin-rpc"
-import { useInstalledPlugins } from "@/platform/plugins"
+import { operationKindLabel } from "@/features/prepare/use-operation-kind-label"
 import { HeightMapReviewStep } from "./height-map-review-step"
 import { JobFaults, JobProgressDetails } from "./job-details"
 import type { JobActions } from "./job-hooks"
@@ -116,8 +114,7 @@ const mm = (value: number) => formatMillimetres(Number(value.toFixed(3)))
 function operationSummary(
   operation: Operation,
   subject: JobSubject,
-  tools: readonly Tool[],
-  plugins: readonly PluginSummary[] | undefined
+  tools: readonly Tool[]
 ): string {
   const { source } = operation
   switch (source.kind) {
@@ -147,7 +144,7 @@ function operationSummary(
       const names = toolNames(operation, subject, tools)
       return names.length
         ? names.join(", ")
-        : `${operationKindLabel(operation, plugins)} with no tool change.`
+        : `${operationKindLabel(operation)} with no tool change.`
     }
   }
 }
@@ -317,8 +314,7 @@ function sensorLabel(tool: number | null): string {
 function operationResults(
   stage: OperationStage,
   subject: JobSubject,
-  tools: readonly Tool[],
-  plugins: readonly PluginSummary[] | undefined
+  tools: readonly Tool[]
 ): { description: ReactNode; details: ReactNode } {
   const { operation, surface, grid, contacts, status } = stage
   const facts: Fact[] = []
@@ -370,8 +366,7 @@ function operationResults(
     description =
       "The machine reports its measurements only when it probes from a stored anchor with the work origin kept relative to one."
   return {
-    description:
-      description ?? operationSummary(operation, subject, tools, plugins),
+    description: description ?? operationSummary(operation, subject, tools),
     details: (
       <>
         {facts.length > 0 && <HeightMapFacts facts={facts} />}
@@ -390,13 +385,7 @@ function OperationItem({
   subject: JobSubject
   tools: readonly Tool[]
 }) {
-  const plugins = useInstalledPlugins().data
-  const { description, details } = operationResults(
-    stage,
-    subject,
-    tools,
-    plugins
-  )
+  const { description, details } = operationResults(stage, subject, tools)
   return (
     <StageItem
       title={stage.operation.name}
@@ -420,9 +409,8 @@ function RunningOperation({
   subject: JobSubject | null
   tools: readonly Tool[]
 }) {
-  const plugins = useInstalledPlugins().data
   const results =
-    stage && subject ? operationResults(stage, subject, tools, plugins) : null
+    stage && subject ? operationResults(stage, subject, tools) : null
   return (
     <StageCard
       title={stage?.operation.name ?? "Running"}

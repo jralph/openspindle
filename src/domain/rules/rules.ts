@@ -7,7 +7,6 @@ import { STOCK_DEPTH_RULES } from "../compile/stock-depth"
 import { PROGRAM_RULES } from "../design-rules/common-rules"
 import { MOVE_RULES } from "../design-rules/move-rules"
 import { Z1_RULES } from "../fixtures/makera-z1/program-rules"
-import { PLUGIN_RULES } from "../operations/plugin-rules"
 import { PLATE_RUN_RULES } from "../plate/run-rules"
 import { WORK_ORIGIN_RULES } from "../plate/work-origin"
 import { PROBE_3D_RULES } from "../probe-3d/rules"
@@ -30,7 +29,6 @@ export const RULES: readonly AnyRule[] = [
   ...PROBE_3D_RULES,
   ...AUTO_SCAN_RULES,
   ...STOCK_DEPTH_RULES,
-  ...PLUGIN_RULES,
   ...MOVE_RULES,
   ...PROGRAM_RULES,
   ...Z1_RULES,

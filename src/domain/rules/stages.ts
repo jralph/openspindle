@@ -68,22 +68,12 @@ export type ToolRuleSubject = {
   readonly tool: Tool | null
 }
 
-/** A plugin as installed, as the rules about operations from plugins read it. */
-export type InstalledPlugin = {
-  readonly id: string
-  readonly name: string
-  readonly version: string
-  readonly incompatible: string | null
-  readonly usable: boolean
-}
-
-/** One operation of a plate, with its machine's kit, the compiled program and the installed plugins (null while they load). */
+/** One operation of a plate, with its machine's kit and the compiled program. */
 export type OperationRuleSubject = {
   readonly operation: Operation
   readonly plate: Plate
   readonly kit: FixtureKit
   readonly compiled: CompiledPlate
-  readonly plugins: readonly InstalledPlugin[] | null
 }
 
 /** The connected machine, as far as running a plate depends on it. */
