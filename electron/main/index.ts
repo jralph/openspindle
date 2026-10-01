@@ -8,6 +8,7 @@ import { ErrorReports } from "./diagnostics/error-reports"
 import { log } from "./diagnostics/log"
 import { DiagnosticsSettingsStore } from "./diagnostics/settings"
 import { MachineHost } from "./machine/machine-host"
+import { SimulatorService } from "./simulator/simulator-service"
 import { MACHINE_STOP_ITEM, buildApplicationMenu } from "./menu"
 import { PcbService } from "./pcb/service"
 import { handleAppProtocol, registerAppScheme } from "./protocol"
@@ -130,9 +131,11 @@ function start(diagnostics: Diagnostics, openedFiles: OpenedFileBus) {
       if (window && port) sendPort(window.webContents, "machine", port)
     },
   })
+  const simulator = new SimulatorService(app.getPath("userData"))
   // The only thing a launch restores is the connection to the last used device, which the
-  // machine process tries as it starts.
-  machine.start()
+  // machine process tries as it starts: once the app's simulator, which it may be, listens.
+  // That takes milliseconds; the window asks for its port to the machine process much later.
+  void simulator.start().finally(() => machine.start())
   const entry = rendererEntry()
   const pcb = new PcbService(app.getPath("userData"), currentWindow)
   serveHostConnections({
@@ -147,6 +150,7 @@ function start(diagnostics: Diagnostics, openedFiles: OpenedFileBus) {
       unsaved,
       keptWorkspace,
       diagnostics,
+      simulator,
     }),
     isTrusted: trustedSender(currentWindow, entry.origin),
     machine: () => machine.connectApp(),
@@ -180,6 +184,7 @@ function start(diagnostics: Diagnostics, openedFiles: OpenedFileBus) {
     if (storageSettled) {
       fusion.dispose()
       machine.dispose()
+      simulator.dispose()
       pcb.dispose()
       log.info("OpenSpindle quit")
       log.flushSync()

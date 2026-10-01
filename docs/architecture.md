@@ -9,7 +9,7 @@ An RPC endpoint (`packages/rpc`) serves at most 64 calls at once per budget, a m
 ## Layers
 
 ```
-electron/main/        the main process: window, app:// protocol, menus, services, the machine process's host, PCB conversion
+electron/main/        the main process: window, app:// protocol, menus, services, the machine process's host, the app's Z1 simulator, PCB conversion
 electron/machine/     the machine process: the machine controller, its Node ports and its program thread
 electron/preload/     a generic bridge that hands the renderer its RPC MessagePorts
 packages/rpc          typed RPC: Zod contracts, endpoints, cancellation, subscriptions, transports
@@ -23,7 +23,7 @@ src/app/              application state: TanStack stores, command dispatch, diag
 src/features/         UI features: shell, prepare, job, device, tool library, models, project, PCB, design rules, settings, workspace settings
 src/routes/           thin TanStack Router file routes: /prepare, /job, /device
 src/components/       shadcn ui components and shared workspace components (bed viewer)
-tools/z1-simulator/   a development-only Makera Z1 simulator
+tools/z1-simulator/   the Makera Z1 simulator: `npm run sim:z1`, and the one the app runs (electron/main/simulator)
 ```
 
 Dependencies point downward: features use app and domain; app uses domain, formats, persistence and platform; the domain uses nothing above it. ESLint enforces the boundaries that matter most:

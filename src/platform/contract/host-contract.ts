@@ -11,6 +11,7 @@ import { diagnosticsEvents, diagnosticsMethods } from "./diagnostics"
 import { pcbMethods } from "./pcb"
 import { MenuCommandSchema } from "./menu"
 import { modelMethods } from "./models"
+import { simulatorMethods } from "./simulator"
 import { storageMethods } from "./storage"
 import { windowMethods } from "./window"
 import { fusionEvents, fusionMethods } from "./fusion"
@@ -34,6 +35,7 @@ export const hostContract = defineContract({
     ...windowMethods,
     ...diagnosticsMethods,
     ...fusionMethods,
+    ...simulatorMethods,
   },
   events: {
     ...diagnosticsEvents,
