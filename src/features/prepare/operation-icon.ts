@@ -1,4 +1,5 @@
 import {
+  ArrowDownToDot,
   ArrowDownToLine,
   Axis3d,
   CircuitBoard,
@@ -7,27 +8,42 @@ import {
   SquareDashed,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
-import type { ProbingSourceKind } from "@/domain/operations/kinds"
-import type { Operation } from "@/domain/operations/operation"
+import type { Operation, ProbingSource } from "@/domain/operations/operation"
+import { GENERIC_STRATEGIES } from "@/domain/probing/strategies"
+import type { ProbingTask } from "@/domain/probing/strategy"
 
-/** The probing operations' icons, wherever they are offered or listed. */
-export const PROBING_ICONS: Record<ProbingSourceKind, LucideIcon> = {
-  "auto-level": LandPlot,
-  "auto-z-height": ArrowDownToLine,
-  "auto-scan": SquareDashed,
-  "probe-3d": Axis3d,
+/** The probing operations' icons by task. */
+const PROBING_ICONS: Record<ProbingTask, LucideIcon> = {
+  grid: LandPlot,
+  "touch-off": ArrowDownToLine,
+  outline: SquareDashed,
+  origin: Axis3d,
+}
+
+/**
+ * A probing strategy's icon, wherever it is offered or its operations are listed: its task's,
+ * and for a machine's own touch-off, such as the Z1 firmware's Z probe, one apart from Surface
+ * touch.
+ */
+export function probingIcon({
+  task,
+  strategy,
+}: Pick<ProbingSource, "task" | "strategy">): LucideIcon {
+  const generic = GENERIC_STRATEGIES.some((item) => item.id === strategy)
+  return task === "touch-off" && !generic ? ArrowDownToDot : PROBING_ICONS[task]
 }
 
 /** An operation's icon, shared by the tree, inspector and job view. */
 export function operationIcon(operation: Operation): LucideIcon {
-  switch (operation.source.kind) {
+  const { source } = operation
+  switch (source.kind) {
     case "file":
     case "unsupported":
       return FileCode2
     case "pcb":
       return CircuitBoard
-    default:
-      return PROBING_ICONS[operation.source.kind]
+    case "probing":
+      return probingIcon(source)
   }
 }
 

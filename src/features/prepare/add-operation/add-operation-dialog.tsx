@@ -1,50 +1,15 @@
 import { useState } from "react"
-import type { ReactNode } from "react"
-import { ArrowLeft, CircuitBoard } from "lucide-react"
+import { ArrowLeft, CircuitBoard, Crosshair } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { FieldSet } from "@/components/ui/field"
-import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item"
 import { ImporterView } from "@/features/pcb/importer"
 import { AppDialog } from "@/features/shell/app-dialog"
-import { useBuiltInSources } from "./built-in-sources"
-
-function SourceItem({
-  icon,
-  title,
-  description,
-  onSelect,
-}: {
-  icon: ReactNode
-  title: string
-  description: string
-  onSelect: () => void
-}) {
-  return (
-    <Item
-      render={
-        <Button
-          variant="ghost"
-          className="h-auto whitespace-normal"
-          type="button"
-        />
-      }
-      className="text-left"
-      onClick={onSelect}
-    >
-      <ItemMedia variant="icon">{icon}</ItemMedia>
-      <ItemContent>
-        <ItemTitle>{title}</ItemTitle>
-        <ItemDescription>{description}</ItemDescription>
-      </ItemContent>
-    </Item>
-  )
-}
+import {
+  PROBING_DESCRIPTION,
+  ProbingSteps,
+  useProbingReason,
+} from "./probing-picker"
+import { SourceItem } from "./source-item"
 
 /** Built-in machining and probing sources for adding an operation. */
 export function AddOperationDialog({
@@ -54,8 +19,14 @@ export function AddOperationDialog({
   preset?: "pcb"
   onClose: () => void
 }) {
-  const builtIns = useBuiltInSources()
-  const [chosen, choose] = useState<"pcb" | null>(preset ?? null)
+  const probingReason = useProbingReason()
+  const [chosen, choose] = useState<"pcb" | "probing" | null>(preset ?? null)
+  if (chosen === "probing")
+    return (
+      <AppDialog title="Probing" width="wide" onClose={onClose}>
+        <ProbingSteps onAdded={onClose} onBack={() => choose(null)} />
+      </AppDialog>
+    )
   if (chosen === "pcb")
     return (
       <AppDialog title="PCB" width="wide" onClose={onClose}>
@@ -81,17 +52,13 @@ export function AddOperationDialog({
           description="Create operations from KiCad Gerber and Excellon files."
           onSelect={() => choose("pcb")}
         />
-        {builtIns.map(({ id, icon: Icon, title, description, add }) => (
-          <SourceItem
-            key={id}
-            icon={<Icon />}
-            title={title}
-            description={description}
-            onSelect={() => {
-              if (add()) onClose()
-            }}
-          />
-        ))}
+        <SourceItem
+          icon={<Crosshair />}
+          title="Probing"
+          description={PROBING_DESCRIPTION}
+          reason={probingReason}
+          onSelect={() => choose("probing")}
+        />
       </FieldSet>
     </AppDialog>
   )

@@ -3,7 +3,8 @@ import type { StoredAnchorSetup } from "@/domain/anchors/stored-anchors"
 import type { FixtureInstance } from "@/domain/fixtures/definitions"
 import type { Tool } from "@/domain/tools/tool"
 import type { Stock } from "@/domain/stock/stock"
-import { resolveOperation } from "../operations/kinds"
+import { kitForPlate } from "../fixtures/catalog"
+import { kindOf, resolveOperation } from "../operations/kinds"
 import {
   OperationSchema,
   OperationSourceSchema,
@@ -232,14 +233,24 @@ function replacePlate(state: WorkspaceState, next: Plate): WorkspaceState {
   }
 }
 
-/** Re-binds an operation's tools to what its NC currently selects. */
+/**
+ * Re-binds an operation's tools to what its NC currently selects: the numbers its kind knows it
+ * selects, such as a probing operation's probe, whether or not its NC resolves, or else those of
+ * its NC.
+ */
 function rebind(
   plate: Plate,
   operation: Operation,
   library: readonly Tool[],
   preferred?: ReadonlyMap<number | null, string>
 ): Plate {
-  const resolved = resolveOperation(operation, plate)
+  const known = kindOf(operation).tools?.(operation)
+  if (known)
+    return bindTools(plate, operation, known, { preferred, library }).plate
+  const resolved = resolveOperation(operation, plate, {
+    kit: kitForPlate(plate),
+    tools: library,
+  })
   // Pending operations keep their bindings until they have NC.
   if (!resolved.ok) return plate
   return bindTools(plate, operation, localTools(resolved.value.nc), {

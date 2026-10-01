@@ -1,15 +1,16 @@
 import { COMMAND_RULES } from "@/machine/contract"
-import { HEIGHT_MAP_RULES } from "../auto-level/analysis"
-import { AUTO_LEVEL_RULES, PROBING_RUN_RULES } from "../auto-level/rules"
-import { AUTO_SCAN_RULES } from "../auto-scan/rules"
-import { AUTO_Z_HEIGHT_RULES } from "../auto-z-height/rules"
 import { STOCK_DEPTH_RULES } from "../compile/stock-depth"
 import { PROGRAM_RULES } from "../design-rules/common-rules"
 import { MOVE_RULES } from "../design-rules/move-rules"
 import { Z1_RULES } from "../fixtures/makera-z1/program-rules"
 import { PLATE_RUN_RULES } from "../plate/run-rules"
 import { WORK_ORIGIN_RULES } from "../plate/work-origin"
-import { PROBE_3D_RULES } from "../probe-3d/rules"
+import { PROBING_RUN_RULES } from "../probing/rules"
+import { HEIGHT_MAP_RULES } from "../probing/tasks/grid/analysis"
+import { GRID_RULES } from "../probing/tasks/grid/rules"
+import { ORIGIN_RULES } from "../probing/tasks/origin/rules"
+import { OUTLINE_RULES } from "../probing/tasks/outline/rules"
+import { TOUCH_OFF_RULES } from "../probing/tasks/touch-off/rules"
 import { TOOL_RULES } from "../tools/tool-table"
 import type { AnyRule, StageName, StageRule } from "./stages"
 
@@ -24,10 +25,10 @@ export const RULES: readonly AnyRule[] = [
   ...WORK_ORIGIN_RULES,
   ...PROBING_RUN_RULES,
   ...TOOL_RULES,
-  ...AUTO_LEVEL_RULES,
-  ...AUTO_Z_HEIGHT_RULES,
-  ...PROBE_3D_RULES,
-  ...AUTO_SCAN_RULES,
+  ...GRID_RULES,
+  ...TOUCH_OFF_RULES,
+  ...ORIGIN_RULES,
+  ...OUTLINE_RULES,
   ...STOCK_DEPTH_RULES,
   ...MOVE_RULES,
   ...PROGRAM_RULES,

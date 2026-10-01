@@ -4,8 +4,7 @@ import type { CompiledPlate } from "@/domain/compile/compile"
 import type { GCodeProgram, GCodeSegment } from "@/domain/nc/gcode"
 import type { FixtureKit } from "@/domain/fixtures/fixture-kit"
 import type { Operation } from "@/domain/operations/operation"
-import type { Probe } from "@/domain/probing/probe"
-import { getProbingPreview } from "@/domain/probing/registration"
+import { getProbingPreview } from "@/domain/probing/preview"
 import { positionLabel } from "./job-view"
 
 export type PreviewStep = {
@@ -47,7 +46,7 @@ type Mark = Pick<PreviewTick, "kind" | "label">
 const STOP_BEFORE: Mark = { kind: "pause", label: "Pause (M0)" }
 
 /**
- * The timelines of compiled programs, with the sections, operations and probe each was built
+ * The timelines of compiled programs, with the sections, operations and probing each was built
  * from. A plate whose operations did not change keeps its program object and its sections.
  */
 const timelines = new WeakMap<
@@ -55,7 +54,7 @@ const timelines = new WeakMap<
   {
     readonly sections: TimelineSource["sections"]
     readonly operations: readonly Operation[]
-    readonly probe: Probe | null
+    readonly probing: FixtureKit["probing"]
     readonly timeline: PreviewTimeline
   }
 >()
@@ -69,28 +68,33 @@ const timelines = new WeakMap<
 export function buildPreviewTimeline(
   compiled: TimelineSource,
   operations: readonly Operation[],
-  kit: Pick<FixtureKit, "probe">
+  kit: Pick<FixtureKit, "probing">
 ): PreviewTimeline {
   const { program, sections } = compiled
   const cached = timelines.get(program)
   if (
     cached?.sections === sections &&
     cached.operations === operations &&
-    cached.probe === kit.probe
+    cached.probing === kit.probing
   )
     return cached.timeline
-  const timeline = timelineOf(compiled, operations, kit.probe)
-  timelines.set(program, { sections, operations, probe: kit.probe, timeline })
+  const timeline = timelineOf(compiled, operations, kit.probing)
+  timelines.set(program, {
+    sections,
+    operations,
+    probing: kit.probing,
+    timeline,
+  })
   return timeline
 }
 
 function timelineOf(
   { program, sections, pausePoints }: TimelineSource,
   operations: readonly Operation[],
-  probe: Probe | null
+  machine: FixtureKit["probing"]
 ): PreviewTimeline {
   const byId = new Map(operations.map((operation) => [operation.id, operation]))
-  const probing = getProbingPreview(program, probe)
+  const probing = getProbingPreview(program, machine)
   const grids = new Map(probing.grids.map((grid) => [grid.sourceLine, grid]))
   const blocks = program.lines.map(readNcBlock)
   const executable = (block: NcBlock) =>
@@ -136,13 +140,13 @@ function timelineOf(
     const step = steps.length + 1
     const grid = grids.get(line)
     if (grid) {
-      for (let point = 0; point < grid.pointCount; point++)
+      for (let point = 0; point < grid.samples.length; point++)
         steps.push({ line, segmentEnd, probePoint: point })
       ticks.push({
         step,
         line,
         kind: "probe",
-        label: `Probe grid · ${grid.pointCount} points`,
+        label: `Probe grid · ${grid.samples.length} points`,
       })
     } else steps.push({ line, segmentEnd })
     for (const item of marks.get(line) ?? [])

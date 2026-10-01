@@ -1,4 +1,4 @@
-import { CircuitBoard, Settings2, ShieldCheck } from "lucide-react"
+import { CircuitBoard, Crosshair, Settings2, ShieldCheck } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -10,15 +10,19 @@ import {
 } from "@/app/workspace/workspace-context"
 import { checkPlateDesignRules } from "@/features/design-rules/design-rule-check"
 import { openDialog } from "@/features/shell/dialogs"
-import { useBuiltInSources } from "./add-operation/built-in-sources"
+import {
+  PROBING_DESCRIPTION,
+  useProbingReason,
+} from "./add-operation/probing-picker"
 import { ArrangeTools } from "./arrange/arrange-tools"
 
 /**
  * Tools over the viewer, as icons that say what they do on hover: moving and locking what is
- * selected in it, PCB and probing actions, then checking the selected plate's design rules and the workspace settings.
+ * selected in it, the Probing and PCB actions, then checking the selected plate's design rules
+ * and the workspace settings.
  */
 export function PrepareToolbar() {
-  const builtIns = useBuiltInSources()
+  const probingReason = useProbingReason()
   const workspace = useWorkspaceStore()
   const hasPlate = useWorkspace((state) => selectedPlate(state) !== null)
   return (
@@ -34,16 +38,14 @@ export function PrepareToolbar() {
         >
           <ArrangeTools />
           <Separator orientation="vertical" />
-          {builtIns.map(({ id, icon: Icon, title, description, add }) => (
-            <ToolbarButton
-              key={id}
-              label={title}
-              description={description}
-              onClick={add}
-            >
-              <Icon />
-            </ToolbarButton>
-          ))}
+          <ToolbarButton
+            label="Probing"
+            description={PROBING_DESCRIPTION}
+            reason={probingReason}
+            onClick={() => openDialog({ kind: "probing" })}
+          >
+            <Crosshair />
+          </ToolbarButton>
           <ToolbarButton
             label="PCB"
             description="Create operations from KiCad Gerber and Excellon files."

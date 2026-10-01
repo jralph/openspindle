@@ -8,6 +8,8 @@ import {
 } from "@/domain/plate/plate"
 import { OperationSchema } from "@/domain/operations/operation"
 import { adler32, decodeBase64Json, encodeBase64Json } from "./base64-json"
+import { isJsonObject } from "./upgrade/json"
+import { upgradePlate } from "./upgrade/plate"
 
 /** Setup and editable operations embedded as leading comments of an exported NC file. */
 const MAX_ENVELOPE_BYTES = 32 * 1024 * 1024
@@ -21,12 +23,32 @@ export const carriesPlate = (source: string) =>
   source.startsWith(";@OPENSPINDLE|")
 
 /**
- * The envelope version exports write. Version 6 keeps PCB as a built-in operation source.
+ * The envelope version exports write.
+ * Version 6 keeps PCB as a built-in operation source.
+ * Version 7 makes probing one kind of operation: a strategy doing a task with a probe tool.
  */
-export const PLATE_ENVELOPE_VERSION = 6
+export const PLATE_ENVELOPE_VERSION = 7
 
 /** The oldest envelope version that can be upgraded on import. */
-export const PREVIOUS_PLATE_ENVELOPE_VERSION = 4
+export const OLDEST_PLATE_ENVELOPE_VERSION = 4
+
+/**
+ * An export's payload of an earlier version, in the current one: its plate upgraded
+ * (`upgradePlate`, with the importing app's tool `library`), and the notices that brings, for
+ * the plate it imports as. What it still does not recognize (such as format 4's
+ * travel Z) is left for reading to leave out and report, rather than rewritten field by field.
+ */
+export function upgradeEnvelopePayload(
+  payload: unknown,
+  library: readonly unknown[]
+): { readonly payload: unknown; readonly notices: readonly string[] } {
+  if (!isJsonObject(payload)) return { payload, notices: [] }
+  const { plate, notices } = upgradePlate(payload, library)
+  return {
+    payload: { ...plate, schemaVersion: PLATE_ENVELOPE_VERSION },
+    notices,
+  }
+}
 
 /** The exported plate: everything needed to restore editable operations exactly. */
 export const PlateEnvelopeSchema = z.object({

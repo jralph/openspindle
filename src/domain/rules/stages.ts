@@ -4,11 +4,6 @@ import type {
   Rule,
   RuleResult,
 } from "@/machine/contract"
-import type {
-  GridSize,
-  HeightOutlier,
-  SurfaceFit,
-} from "../auto-level/analysis"
 import type { CompiledPlate } from "../compile/compile"
 import { FRESH_START } from "../design-rules/program-rules"
 import type { ProgramStart } from "../design-rules/program-rules"
@@ -19,6 +14,11 @@ import { programLines } from "../nc/program-lines"
 import type { ProgramLines } from "../nc/program-lines"
 import type { Operation } from "../operations/operation"
 import type { Plate, PlateTool } from "../plate/plate"
+import type {
+  GridSize,
+  HeightOutlier,
+  SurfaceFit,
+} from "../probing/tasks/grid/analysis"
 import type { Tool } from "../tools/tool"
 
 /** What a failure is about, and where on the bed, for views that list it as a diagnostic. */

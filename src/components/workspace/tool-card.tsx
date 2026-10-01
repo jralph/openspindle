@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/item"
 import { useToolThumbnail } from "@/app/tools/tool-picture-cache"
 import type { ToolPictureSource } from "@/app/tools/tool-picture-cache"
-import { isProbe } from "@/domain/tools/tool-table"
+import { isProbe } from "@/domain/tools/tool"
 import { formatToolNumber } from "@/domain/tools/format"
 import type { Tool } from "@/domain/tools/tool"
 import { ToolImage } from "./tool-image"
@@ -34,6 +34,8 @@ export type ToolCardProps = {
   emptyLabel?: string
   className?: string
   slotLabel?: string
+  /** What the card says under the name; by default the tool's size, or that it is a probe. */
+  details?: string
   selected?: boolean
   "aria-label"?: string
 }
@@ -63,6 +65,7 @@ export function ToolCard({
   emptyLabel = "Choose tool",
   className,
   slotLabel,
+  details: shownDetails,
   selected,
   "aria-label": ariaLabel,
 }: ToolCardProps) {
@@ -70,7 +73,8 @@ export function ToolCard({
   // The slot badge is inside the button, but an aria-label replaces its content.
   const label = slotLabel ? `${slotLabel}: ${name}` : name
   let details = "Open the tool library"
-  if (tool && isProbe(tool)) details = "Touch probe"
+  if (shownDetails !== undefined) details = shownDetails
+  else if (tool && isProbe(tool)) details = "Touch probe"
   else if (tool)
     details = `Ø ${formatToolNumber(tool.diameter, "millimeters")} mm · ${formatToolNumber(tool.flutes)} flutes`
 

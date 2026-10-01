@@ -32,7 +32,7 @@ export function plateDiagnostics(
 ): readonly Diagnostic[] {
   const saved = gathered.get(plate)
   if (saved?.tools === context.tools) return saved.diagnostics
-  const compiled = compilePlate(plate)
+  const compiled = compilePlate(plate, context.tools)
   const kit = kitForPlate(plate)
   const operations = plate.operations.map(
     (operation): OperationRuleSubject => ({ operation, plate, kit, compiled })

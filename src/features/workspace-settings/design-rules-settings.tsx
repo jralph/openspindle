@@ -25,7 +25,7 @@ import { FIXTURE_KITS } from "@/domain/fixtures/catalog"
 import { RULES } from "@/domain/rules/rules"
 import { ruleLimitSchema, settingsForm } from "@/domain/rules/settings"
 import type { AnyRule } from "@/domain/rules/stages"
-import { visibleErrors } from "@/features/auto-level/auto-level-settings"
+import { visibleErrors } from "@/features/probing/grid-settings"
 
 const SEVERITY_OPTIONS: ReadonlyArray<{ value: RuleSeverity; label: string }> =
   [

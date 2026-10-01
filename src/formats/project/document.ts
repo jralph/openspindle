@@ -15,8 +15,11 @@ import { fromBase64 } from "../base64-json"
 import { upgradeTool } from "../tool-library/upgrade"
 import { PROJECT_LIMITS } from "./step-nc"
 
-/** Version 7: PCB is built in, with rule settings and no plugin references. */
-export const PROJECT_SCHEMA_VERSION = 7
+/**
+ * Version 7: PCB is built in, with rule settings and no plugin references.
+ * Version 8: probing is one kind of operation: a strategy doing a task with a probe tool.
+ */
+export const PROJECT_SCHEMA_VERSION = 8
 
 /** The workspace fields a project stores exactly as the workspace holds them. */
 type WorkspaceData = Pick<
@@ -84,7 +87,7 @@ function hasValidModel(tool: Tool): boolean {
   }
 }
 
-/** Tools saved by earlier versions (version 2 and 3 records) are brought up to date. */
+/** Tools saved by earlier versions (version 2 to 4 records) are brought up to date. */
 const ToolSchema = z.preprocess(
   upgradeTool,
   z

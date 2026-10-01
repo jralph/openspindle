@@ -16,10 +16,10 @@ import type { Plate, PlateSetup } from "./plate"
 /** Bed coordinates are kept to the nanometre, without float noise or −0. */
 const toNanometre = (value: number) => Number(value.toFixed(6)) + 0
 
-/** Whether a plate sets its work Z by touching off the stock top (auto Z-height). */
+/** Whether a plate sets its work Z by touching off the stock top (a touch-off). */
 export const touchesOffWorkZ = (plate: Pick<Plate, "operations">) =>
   plate.operations.some(
-    (operation) => operation.source.kind === "auto-z-height"
+    ({ source }) => source.kind === "probing" && source.task === "touch-off"
   )
 
 /**
@@ -185,7 +185,7 @@ export function workOriginOnMachine(setup: PlateSetup): MachineOrigin | null {
 /**
  * The NC that puts the machine's work X and Y on a work origin kept relative to an anchor, run
  * before the program's operations: its machine kit's (`FixtureKit.workOffsetNc`). Z stays: the
- * work zero set on Device, or an auto Z-height touch-off, sets it. Empty in bed coordinates.
+ * work zero set on Device, or a probing touch-off, sets it. Empty in bed coordinates.
  */
 export function workOriginNc(
   setup: PlateSetup,

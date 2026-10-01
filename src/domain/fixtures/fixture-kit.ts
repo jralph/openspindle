@@ -8,7 +8,7 @@ import type { NcBlockEffect, NcUnitState } from "../compile/nc-unit"
 import type { FirmwareModel } from "../firmware/firmware-model"
 import type { MachineOrigin } from "../plate/work-origin"
 import type { Result } from "../primitives"
-import type { Probe } from "../probing/probe"
+import type { MachineProbing } from "../probing/strategy"
 import type { Fixture } from "./fixture"
 import type { MachineBed } from "./machine-bed"
 
@@ -34,7 +34,7 @@ export type KitRecolor = {
 }
 
 /**
- * What a kind of machine is and comes with: its work area, bed and probe, the fixtures made for
+ * What a kind of machine is and comes with: its work area, bed and probing, the fixtures made for
  * it and its factory anchors. A device's fixture profile starts from its machine's kit and keeps
  * up with the kit's versions: each version adds fixtures or corrects them.
  */
@@ -52,8 +52,12 @@ export abstract class FixtureKit {
    */
   abstract readonly workArea: Point3
   abstract readonly bed: MachineBed
-  /** The probe the probing operations measure with; null when the machine has none. */
-  abstract readonly probe: Probe | null
+  /**
+   * How it probes with the probes of the tool library: the tool numbers its firmware needs them
+   * in, the NC generic strategies are made of, its firmware's own strategies and how its NC reads
+   * as probing; null for a machine that does not probe.
+   */
+  abstract readonly probing: MachineProbing | null
   /**
    * How its firmware moves for what the preview leaves to it (machine coordinates, probing,
    * tool changes); null when the preview does not follow it.
@@ -85,7 +89,7 @@ export abstract class FixtureKit {
   abstract workOffsetNc(origin: MachineOrigin): readonly string[]
 
   /**
-   * A block of its own NC beyond plain three-axis machining, such as its probe's routines and its
+   * A block of its own NC beyond plain three-axis machining, such as its probes' routines and its
    * park, as combining operations reads it: what the block does, or why it is refused where it
    * is. Null for a block that is not one of its own, which combining reads as plain machining.
    */

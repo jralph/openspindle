@@ -5,13 +5,13 @@ import {
 } from "@/app/workspace/workspace-context"
 import { machineId } from "@/machine/contract"
 import { useMachineSnapshot, useReadHeightMap } from "@/platform/machine"
-import { HeightMapReview } from "@/features/auto-level/height-map-review"
+import { HeightMapReview } from "@/features/probing/height-map-review"
 import { availabilityReason } from "./job-hooks"
 import { jobSessionStore } from "./job-session"
 import type { JobViewOf } from "./job-view"
 
 /**
- * The auto-level review: reads the probed height map once per pause, keeps it in the
+ * The height map review: reads the probed height map once per pause, keeps it in the
  * workspace, and hands the result to the presentational panel. Resume and Stop are in the
  * job's toolbar.
  */
@@ -50,8 +50,8 @@ export function HeightMapReviewStep({
 
   const source = view.operation?.source
   const expected =
-    source?.kind === "auto-level"
-      ? { columns: source.params.columns, rows: source.params.rows }
+    source?.kind === "probing" && source.task === "grid"
+      ? { columns: source.params.points[0], rows: source.params.points[1] }
       : undefined
   return (
     <HeightMapReview

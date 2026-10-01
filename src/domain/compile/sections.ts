@@ -54,7 +54,7 @@ export const machineRetract = (block: Pick<NcBlock, "words">) =>
   )
 
 /** What sections read of a machine's NC through its kit: its probing and its CAM's markers. */
-export type SectionMachine = Pick<FixtureKit, "probe" | "camMarkers">
+export type SectionMachine = Pick<FixtureKit, "probing" | "camMarkers">
 
 /** What a comment on a line of its own says; null for a line that is not one. */
 const commentText = (line: string) =>
@@ -128,9 +128,10 @@ function standingHeading(
 /**
  * Ordered sections of a program (or of one line range of it). The toolpath markers of the
  * machine's CAM have priority; named CAM comments, headings standing as Fusion 360's posts
- * write them, and actual M6 blocks provide fallback boundaries. The machine's probe names its grids and touch-offs. Rapids stay with their path
- * except preparation moves immediately before a tool change. No section is inferred from
- * individual retracts, layers or feed changes.
+ * write them, and actual M6 blocks provide fallback boundaries. The machine's probing names its
+ * grids and touch-offs (`MachineProbing.sections`). Rapids stay with their path except
+ * preparation moves immediately before a tool change. No section is inferred from individual
+ * retracts, layers or feed changes.
  *
  * `keyTool` gives the number a tool change's key uses for a tool the program selects: a
  * compiled plate rewrites T words through its tool table, and keys follow the operation's own
@@ -151,7 +152,7 @@ export function buildProgramSections(
   const lines = program.lines.slice(first - 1, last)
   if (!lines.some((line) => line.trim())) return []
   const absolute = (index: number) => first + index
-  const probing = machine.probe?.sections ?? null
+  const probing = machine.probing?.sections
   const touchOff = (block: NcBlock, tool: number | null = null) =>
     probing?.touchOff(block, tool) ?? null
   const probesGrid = (block: NcBlock) => probing?.probesGrid(block) ?? false
@@ -355,7 +356,7 @@ export function buildProgramSections(
       const segmentStart = lowerSegment(line)
       push(
         "probe",
-        "Auto-level probing",
+        "Height map probing",
         line,
         line,
         activeTool,

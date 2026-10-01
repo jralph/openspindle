@@ -46,7 +46,12 @@ export function plateDesignRuleCheck(
 ): DesignRuleCheck {
   const saved = checked.get(plate)
   if (saved?.settings === settings && saved.tools === tools) return saved.check
-  const check = checkDesignRules(plate, compilePlate(plate), settings, tools)
+  const check = checkDesignRules(
+    plate,
+    compilePlate(plate, tools),
+    settings,
+    tools
+  )
   checked.set(plate, { settings, tools, check })
   return check
 }

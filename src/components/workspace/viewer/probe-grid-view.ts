@@ -1,7 +1,7 @@
 import * as THREE from "three"
 import type { Point3 } from "@/domain/nc/gcode"
-import { probeGridProgress } from "@/domain/probing/registration"
-import type { ProbeGrid, ProbeTouch } from "@/domain/probing/registration"
+import { probeGridProgress } from "@/domain/probing/preview"
+import type { ProbeGrid, ProbeTouch } from "@/domain/probing/preview"
 import { disposeObjects } from "@/lib/three-assets"
 import { STORED_ANCHOR_RADIUS, lineInRanges } from "../bed-viewer-layout"
 import type { LineRange } from "../bed-viewer-layout"
@@ -9,7 +9,7 @@ import type { ViewerPalette } from "./palette"
 
 /** A registered grid and its XY diagram on the plate's nominal surface. */
 export type ProbeGridShape = {
-  grid: ProbeGrid
+  grid: ProbeGrid<"probe" | "bed">
   /** Planned samples in visiting order. */
   points: Point3[]
   outline: Point3[]
@@ -19,7 +19,7 @@ export type ProbeGridShape = {
 
 /** A registered touch-off and where it touches the plate's nominal surface. */
 export type ProbeTouchShape = {
-  touch: ProbeTouch
+  touch: ProbeTouch<"probe" | "bed">
   point: Point3
 }
 
@@ -149,10 +149,10 @@ function markers(
 }
 
 /** Samples are as wide as a touch-off's marker, or narrower where the grid is too dense. */
-function sampleRadius({ width, depth, columns, rows }: ProbeGrid) {
+function sampleRadius({ size, points }: ProbeGrid) {
   const spacing = Math.min(
-    Math.abs(width) / (columns - 1),
-    Math.abs(depth) / (rows - 1)
+    Math.abs(size[0]) / (points[0] - 1),
+    Math.abs(size[1]) / (points[1] - 1)
   )
   return Math.min(STORED_ANCHOR_RADIUS, spacing * SAMPLE_SPACING_SHARE)
 }
