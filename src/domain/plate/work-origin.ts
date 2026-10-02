@@ -1,6 +1,10 @@
 import { isAnchorConfiguration } from "@/machine/contract"
 import type { RuleFixes } from "@/machine/contract"
-import { anchorsFromDevice, bedAnchors } from "@/domain/anchors/stored-anchors"
+import {
+  anchorsFromDevice,
+  bedAnchors,
+  deviceAnchorsOf,
+} from "@/domain/anchors/stored-anchors"
 import type {
   AnchorXY,
   StoredAnchor,
@@ -89,11 +93,6 @@ export function workOriginReference(
   return anchorReference(setup.anchors, setup.workOriginAnchor)
 }
 
-/** The work origin as offsets from its anchor in X and Y (Z stays on the bed). */
-export function workOriginOffset(setup: PlateSetup): Point3 {
-  return offsetFromAnchor(setup.workOrigin, workOriginReference(setup))
-}
-
 /**
  * A point kept relative to one of the `before` anchors, with the `after` ones: it moves with its
  * anchor, keeping its offsets, or stays where it is, in bed coordinates, when that anchor is
@@ -153,7 +152,7 @@ export function withAnchors(
   }
 }
 
-/** An anchor-relative work origin on the machine: its anchor, the offsets and machine X/Y. */
+/** A work origin on the machine: the anchor it is placed from, the offsets and machine X/Y. */
 export type MachineOrigin = {
   readonly anchor: StoredAnchor
   readonly offset: AnchorXY
@@ -163,16 +162,34 @@ export type MachineOrigin = {
 }
 
 /**
- * Where a work origin kept relative to an anchor is on the machine: the anchor's stored machine
- * position plus the offsets. Null in bed coordinates.
+ * The anchor a work origin is placed from on the machine: the one it is kept relative to, or for
+ * the bed origin (bed coordinates) the first anchor, once the anchors are read from the plate's
+ * device. Null at the bed origin on factory or another device's anchors: its work X and Y are set
+ * on Device.
+ */
+function machineReference(setup: PlateSetup): AnchorReference | null {
+  if (setup.workOriginAnchor) return workOriginReference(setup)
+  const { anchors, deviceId } = setup
+  if (
+    !anchors ||
+    anchors.source !== "firmware-config" ||
+    anchors.deviceId !== deviceId
+  )
+    return null
+  return anchorReference(anchors, anchors.anchors[0]?.id)
+}
+
+/**
+ * Where a work origin is on the machine: its anchor's stored machine position plus the offsets.
+ * Null at the bed origin when its anchors were not read from the plate's device.
  */
 export function workOriginOnMachine(setup: PlateSetup): MachineOrigin | null {
-  const reference = workOriginReference(setup)
+  const reference = machineReference(setup)
   const anchor = setup.anchors?.anchors.find(
     (item) => item.id === reference?.anchorId
   )
   if (!reference || !anchor) return null
-  const [dx, dy] = workOriginOffset(setup)
+  const [dx, dy] = offsetFromAnchor(setup.workOrigin, reference)
   const [mx, my] = anchor.machinePosition
   return {
     anchor,
@@ -183,9 +200,10 @@ export function workOriginOnMachine(setup: PlateSetup): MachineOrigin | null {
 }
 
 /**
- * The NC that puts the machine's work X and Y on a work origin kept relative to an anchor, run
- * before the program's operations: its machine kit's (`FixtureKit.workOffsetNc`). Z stays: the
- * work zero set on Device, or a probing touch-off, sets it. Empty in bed coordinates.
+ * The NC that puts the machine's work X and Y on the plate's work origin (`workOriginOnMachine`),
+ * run before the program's operations: its machine kit's (`FixtureKit.workOffsetNc`). Z stays:
+ * the work zero set on Device, or a probing touch-off, sets it. Empty where work X and Y are set
+ * on Device.
  */
 export function workOriginNc(
   setup: PlateSetup,
@@ -195,7 +213,7 @@ export function workOriginNc(
   return origin ? kit.workOffsetNc(origin) : []
 }
 
-/** The work origin Run's plate subject sets from an anchor; null for an operation, without a plate, or in bed coordinates. */
+/** The work origin Run's plate subject sets from an anchor; null for an operation, without a plate, or where work X and Y are set on Device. */
 function anchoredOrigin({
   plate,
   operation,
@@ -265,7 +283,7 @@ const anchorsChanged: StageRule<"run"> = {
   stage: "run",
   label: "Work origin anchor unchanged",
   description:
-    "The anchor a work origin is set from must still be where the connected device stores it; otherwise the work offset lands where the machine's anchor is not.",
+    "The anchor a work origin is set from (for an anchor of the plate's bed setup, the first it is kept from) must still be where the connected device stores it; otherwise the work offset lands where the machine's anchor is not.",
   severity: "error",
   configurable: false,
   chain: WORK_ORIGIN_CHAIN,
@@ -274,7 +292,12 @@ const anchorsChanged: StageRule<"run"> = {
     const { connectedDeviceId, anchors } = subject.machine
     if (!anchored || !connectedDeviceId || !isAnchorConfiguration(anchors))
       return true
-    const { anchor } = anchored.origin
+    // An anchor the plate's bed setup keeps is the first device anchor plus its offset.
+    const { setup, origin } = anchored
+    const anchor =
+      origin.anchor.bedSetup && setup.anchors
+        ? deviceAnchorsOf(setup.anchors)[0]
+        : origin.anchor
     const live = anchorsFromDevice(anchors, connectedDeviceId).anchors.find(
       (item) => item.id === anchor.id
     )

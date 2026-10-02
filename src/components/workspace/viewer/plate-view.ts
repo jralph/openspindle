@@ -5,7 +5,7 @@ import { LineMaterial } from "three/addons/lines/LineMaterial.js"
 import { fixtureModelFinish } from "@/domain/fixtures/catalog"
 import type { MachineBed } from "@/domain/fixtures/machine-bed"
 import { setupItemKey } from "@/domain/plate/setup-items"
-import type { SetupItemRef } from "@/domain/plate/setup-items"
+import type { SetupItemRef, SetupPoint } from "@/domain/plate/setup-items"
 import { isMatteKind } from "@/domain/fixtures/definitions"
 import type {
   FixtureInstance,
@@ -30,7 +30,8 @@ import {
   WORK_AXIS_LENGTH,
   bedArea,
   plateAnchorPoints,
-  plateKit,
+  plateBed,
+  plateSetupPoints,
   plateStockBounds,
 } from "../bed-viewer-layout"
 import type { PlatePlacement, ViewerBounds } from "../bed-viewer-layout"
@@ -39,11 +40,14 @@ import { PlatePath } from "./plate-path"
 import type { PathPresentation } from "./plate-path"
 import {
   sameFields,
+  sameIds,
   samePlate,
   sameProblems,
   sameRanges,
 } from "./plate-identity"
 import type { FieldEquality } from "./plate-identity"
+import { EdgeHighlights } from "./edge-highlights"
+import type { EdgeHighlight } from "./edge-highlights"
 import { ProblemView } from "./problem-view"
 import { SetupMarkers } from "./setup-markers"
 import type { Marker } from "./setup-markers"
@@ -57,6 +61,8 @@ export type PlatePresentation = PathPresentation & {
   shownProblem: string | null
   /** Where the connected machine keeps work zero, on this plate's bed; null to leave it out. */
   machineOrigin: Point3 | null
+  /** Fixtures left out of the view (their ids): not drawn, picked or snapped to. */
+  hiddenFixtures: readonly string[]
 }
 
 /** A setup item under the pointer: which, how far along the ray, and where it was hit. */
@@ -143,6 +149,7 @@ const PRESENTATION_EQUALITY: FieldEquality<PlatePresentation> = {
   shownProblem: Object.is,
   machineOrigin: (a, b) =>
     a === b || (!!a && !!b && a.every((value, index) => value === b[index])),
+  hiddenFixtures: sameIds,
   liveTool: (a, b) =>
     a === b ||
     (!!a &&
@@ -171,13 +178,19 @@ function replaceChildren(group: THREE.Group, children: THREE.Object3D[]) {
   if (children.length) group.add(...children)
 }
 
-/** The reference grid below a bed, in 10 mm squares. */
+/** The reference grid below a bed, in 10 mm squares whose lines run through the bed's origin. */
 export function bedGrid(bed: MachineBed) {
   const { min, max } = bedArea(bed)
-  const size = Math.max(max[0] - min[0], max[1] - min[1])
-  const grid = new THREE.GridHelper(size, Math.round(size / 10), ...GRID_COLORS)
+  const [left, front] = [min[0], min[1]].map(
+    (value) => Math.floor(value / 10) * 10
+  )
+  const [right, back] = [max[0], max[1]].map(
+    (value) => Math.ceil(value / 10) * 10
+  )
+  const size = Math.max(right - left, back - front)
+  const grid = new THREE.GridHelper(size, size / 10, ...GRID_COLORS)
   grid.rotation.x = Math.PI / 2
-  grid.position.set((min[0] + max[0]) / 2, (min[1] + max[1]) / 2, min[2])
+  grid.position.set(left + size / 2, front + size / 2, min[2])
   return grid
 }
 
@@ -476,6 +489,7 @@ export class PlateView {
   private readonly outline = new THREE.Group()
   private readonly markers: SetupMarkers
   private readonly problems: ProblemView
+  private readonly edges: EdgeHighlights
   private readonly machineOrigin: THREE.Group
   private selectedItem: SetupItemRef | null = null
   /** An item drawn moved by a delta, while it is dragged or until its move arrives. */
@@ -491,7 +505,7 @@ export class PlateView {
     this.presentation = presentation
     this.context = context
     this.root.userData.plateId = plate.id
-    const machineBed = plateKit(plate).bed
+    const machineBed = plateBed(plate)
     this.machineBed = machineBed
     this.bed.add(context.assets.bed(machineBed).clone(true))
     this.bed.userData.setupItem = { kind: "bed" } satisfies SetupItemRef
@@ -503,6 +517,7 @@ export class PlateView {
     this.selection = selectionOutline(context.palette.primary, machineBed)
     this.markers = new SetupMarkers(context.palette.primary, context.pixelRatio)
     this.problems = new ProblemView(context.palette)
+    this.edges = new EdgeHighlights(context.palette.primary)
     this.machineOrigin = machineOriginMarker(context.palette.primary)
     this.decoration.add(
       this.axes,
@@ -524,6 +539,7 @@ export class PlateView {
       this.outline,
       this.markers.object,
       this.problems.group,
+      this.edges.group,
       this.machineOrigin,
       this.pick
     )
@@ -558,10 +574,10 @@ export class PlateView {
     this.applyPreview()
   }
 
-  /** The nearest setup item the picking ray hits: the bed, a fixture or the stock. */
+  /** The nearest setup item the picking ray hits: the bed, a shown fixture or the stock. */
   itemHit(raycaster: THREE.Raycaster): ItemHit | null {
     const candidates: THREE.Object3D[] = [
-      ...this.fixtureGroups.values(),
+      ...[...this.fixtureGroups.values()].filter((group) => group.visible),
       this.bed,
     ]
     if (this.stock.visible && this.stock.children.length)
@@ -571,6 +587,23 @@ export class PlateView {
       if (item) return { item, distance: hit.distance, point: hit.point }
     }
     return null
+  }
+
+  /**
+   * The plate's setup points, which moves snap to: a hidden fixture's are left out, unless it is
+   * the selected item.
+   */
+  setupPoints(): readonly SetupPoint[] {
+    const points = plateSetupPoints(this.current)
+    const hidden = this.presentation.hiddenFixtures
+    if (!hidden.length) return points
+    const selected = this.selectedItem
+    return points.filter(
+      ({ item }) =>
+        item?.kind !== "fixture" ||
+        !hidden.includes(item.id) ||
+        (selected?.kind === "fixture" && selected.id === item.id)
+    )
   }
 
   /** Outlines the selected item's box; null clears it. */
@@ -585,6 +618,11 @@ export class PlateView {
   /** Shows mount point markers; null hides them. */
   showMarkers(markers: readonly Marker[] | null) {
     this.markers.show(markers)
+  }
+
+  /** Shows edges being picked; null hides them. */
+  showEdges(edges: readonly EdgeHighlight[] | null) {
+    this.edges.show(edges)
   }
 
   /**
@@ -618,6 +656,7 @@ export class PlateView {
     this.path.dispose()
     this.markers.dispose()
     this.problems.dispose()
+    this.edges.dispose()
     // Bed and fixture clones share their templates' geometry; release only owned resources.
     disposeObjects(
       this.stock,
@@ -711,6 +750,7 @@ export class PlateView {
       kind: "fixture",
       id: instance.id,
     } satisfies SetupItemRef
+    placed.visible = !this.presentation.hiddenFixtures.includes(instance.id)
     this.fixtureGroups.set(instance.id, placed)
     this.fixtures.add(placed)
     // A fixture that loads while it is dragged starts where the drag has it.
@@ -783,6 +823,8 @@ export class PlateView {
     const { presentation } = this
     this.selection.visible = presentation.active
     this.stock.visible = presentation.showStock
+    for (const [id, group] of this.fixtureGroups)
+      group.visible = !presentation.hiddenFixtures.includes(id)
     this.path.present(presentation)
     this.problems.show(presentation.problems, presentation.shownProblem)
     const { machineOrigin } = presentation

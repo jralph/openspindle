@@ -17,7 +17,7 @@ type ProbingKind = {
   readonly task: "grid" | "touch-off" | "outline" | "origin"
   /** The tool number its NC selected, which the operation's probe now is. */
   readonly probe: number
-  /** The strategy that writes the NC it wrote, on the plate with this setup. */
+  /** The strategy of format 8 that writes the NC it wrote, on the plate with this setup. */
   readonly strategy: (params: JsonObject, setup: unknown) => string
   readonly params: (params: JsonObject) => JsonObject
 }
@@ -61,8 +61,8 @@ function withoutBall(params: JsonObject): JsonObject {
 }
 
 /**
- * Whether a plate's work X and Y are set from one of its stored anchors, as its program sets them
- * (`workOriginOnMachine`): its work origin is kept relative to an anchor its snapshot holds.
+ * Whether a plate's work X and Y were set from one of its stored anchors, as format 5's program
+ * set them: its work origin is kept relative to an anchor its snapshot holds.
  */
 function keepsWorkOriginAtAnchor(setup: unknown): boolean {
   if (!isJsonObject(setup) || !isJsonObject(setup.anchors)) return false
@@ -149,7 +149,7 @@ export type UpgradedSource = {
   readonly source: JsonObject
   /** The earlier kind's label, which a new operation of it was named. */
   readonly label: string
-  /** The strategy that writes its NC; null where the source holds no valid one. */
+  /** The strategy that wrote its NC in format 8; null where the source holds no valid one. */
   readonly strategy: string | null
   /** The tool number its NC selects; null where the source holds no valid one. */
   readonly probe: number | null
@@ -159,11 +159,11 @@ export type UpgradedSource = {
 
 /**
  * An operation's source as earlier formats saved it (projects before format 8, exports before
- * version 7), in the current one, when it is one of their four probing kinds with parameters:
- * one probing source of the task the kind did, the strategy that writes the NC the kind wrote on
- * this plate (`setup`), and the probe slot its NC selected. 3D probing takes the ball of that
- * probe rather than its own. Keys the source already has stay as they are. Null for any other
- * source.
+ * version 7), as format 8 saves it, when it is one of their four probing kinds with parameters:
+ * one probing source of the task the kind did, the strategy of format 8 that writes the NC the
+ * kind wrote on this plate (`setup`), and the probe slot its NC selected. 3D probing takes the
+ * ball of that probe rather than its own. Keys the source already has stay as they are. Null for
+ * any other source.
  */
 export function upgradeProbingSource(
   source: JsonObject,

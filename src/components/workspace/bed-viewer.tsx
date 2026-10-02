@@ -36,6 +36,7 @@ export type {
   ArrangePick,
   ArrangeSelection,
   ArrangeView,
+  PickedPoint,
 } from "./viewer/setup-arranger"
 type Props = {
   plates: ViewerPlate[]
@@ -44,6 +45,8 @@ type Props = {
   selectedLineRanges?: LineRange[]
   /** Program lines each plate leaves out of the view, such as hidden operations', by plate id. */
   hiddenLineRanges?: Readonly<Record<string, readonly LineRange[]>>
+  /** Fixtures each plate leaves out of the view (their ids), by plate id. */
+  hiddenFixtures?: Readonly<Record<string, readonly string[]>>
   previewLine?: number | null
   previewProbePoint?: number | null
   /**
@@ -81,6 +84,7 @@ export function BedViewer({
   onSelectPlate,
   selectedLineRanges,
   hiddenLineRanges,
+  hiddenFixtures,
   previewLine,
   previewProbePoint,
   playhead,
@@ -103,6 +107,7 @@ export function BedViewer({
   const container = useRef<HTMLDivElement>(null)
   const labels = useRef(new Map<string, HTMLButtonElement>())
   const problemMarkers = useRef(new Map<string, HTMLElement>())
+  const arrangeLabel = useRef<HTMLDivElement>(null)
   const select = useRef(onSelectPlate)
   const zoomChange = useRef(onZoomChange)
   const arrange = useRef(onArrange)
@@ -129,11 +134,14 @@ export function BedViewer({
       menu: (request) => arrange.current?.menu(request),
       pick: (pick) => arrange.current?.pick(pick),
       drag: (drag) => arrange.current?.drag(drag),
+      pickPoint: (plateId, pick) => arrange.current?.pickPoint(plateId, pick),
+      pickEdge: (plateId, edge) => arrange.current?.pickEdge(plateId, edge),
     }
     const scene = BedScene.create(
       container.current,
       labels.current,
       problemMarkers.current,
+      arrangeLabel,
       {
         selectPlate: (id) => select.current(id),
         zoomChange: (value) => zoomChange.current?.(value),
@@ -159,6 +167,7 @@ export function BedViewer({
       selectedPlateId,
       selectedLineRanges,
       hiddenLineRanges,
+      hiddenFixtures,
       previewLine,
       previewProbePoint,
       progress,
@@ -173,6 +182,7 @@ export function BedViewer({
     selectedPlateId,
     selectedLineRanges,
     hiddenLineRanges,
+    hiddenFixtures,
     previewLine,
     previewProbePoint,
     progress,
@@ -287,6 +297,11 @@ export function BedViewer({
             </div>
           )
         })}
+        {/* What a click picks, beside it: where it is, and what it snapped to. */}
+        <div
+          ref={arrangeLabel}
+          className="invisible absolute translate-x-3 -translate-y-[calc(100%+0.75rem)] rounded-md bg-foreground px-2.5 py-1.5 font-numeric text-xs whitespace-pre text-background shadow-md"
+        />
       </div>
       {error && (
         <div className="absolute bottom-4 left-4 rounded-md border bg-background px-3 py-2 text-xs text-destructive">

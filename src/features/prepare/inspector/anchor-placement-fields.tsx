@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { FieldLegend, FieldSet } from "@/components/ui/field"
+import { Hint } from "@/components/workspace/hint"
 import { ReferencePointFields } from "@/components/workspace/reference-point-fields"
 import {
   anchorReference,
@@ -15,7 +16,10 @@ type RelativePointFieldsProps = {
   label: string
   /** The point, in bed millimetres. */
   value: Point3
-  /** The stored anchor its X and Y are kept relative to; null or absent for bed coordinates. */
+  /**
+   * The stored anchor its X and Y are kept relative to; null or absent for bed coordinates, which
+   * are from the first anchor.
+   */
   relativeTo: string | null | undefined
   anchorSetup: StoredAnchorSetup | null
   disabled?: boolean
@@ -29,9 +33,10 @@ const AXES = ["X", "Y", "Z"] as const
 
 /**
  * A point on the bed whose X and Y are offsets from one of the machine's stored anchors, which
- * it follows when the anchors change, or a custom position in bed coordinates; Z stays on the
- * bed. Choosing another reference leaves the point where it is and shows its X and Y from
- * there. Without stored anchors, it is a custom position.
+ * it follows when the anchors change; Z stays on the bed. The first anchor is the bed's origin,
+ * so a point kept relative to it is in bed coordinates. Choosing another reference leaves the
+ * point where it is and shows its X and Y from there. Without stored anchors, it is a position
+ * on the bed.
  */
 export function RelativePointFields({
   label,
@@ -44,13 +49,20 @@ export function RelativePointFields({
   onRelativeToChange,
 }: RelativePointFieldsProps) {
   const factory = anchorSetup?.source === "factory"
+  const anchors = bedAnchors(anchorSetup ?? undefined)
+  const origin = anchors.at(0)
+  const others = anchors.slice(1)
   const references = [
-    ...bedAnchors(anchorSetup ?? undefined).map((anchor) => ({
+    {
+      value: "",
+      label: origin ? `${origin.name} (bed origin)` : "Bed",
+      axes: AXES,
+    },
+    ...others.map((anchor) => ({
       value: anchor.id,
       label: anchorDisplayName(anchor, factory),
       axes: AXES,
     })),
-    { value: "", label: "Custom position", axes: AXES },
   ]
   const reference = anchorReference(anchorSetup, relativeTo)
   const [x, y, z] = offsetFromAnchor(value, reference)
@@ -58,7 +70,9 @@ export function RelativePointFields({
     <ReferencePointFields
       label={label}
       references={references}
-      reference={reference?.anchorId ?? ""}
+      reference={
+        reference && reference.anchorId !== origin?.id ? reference.anchorId : ""
+      }
       point={{ X: x, Y: y, Z: z }}
       locks={zLock === undefined ? {} : { Z: zLock }}
       disabled={disabled}
@@ -73,7 +87,9 @@ export function RelativePointFields({
 type AnchorPlacementFieldsProps = Omit<RelativePointFieldsProps, "label"> & {
   /** What is placed, as accessible names say it: "{name} placement", "{name} anchor X". */
   name: string
-  /** Which of its points the anchor is, beside the legend: the front-left bottom corner by default. */
+  /** Which of its points the anchor is, as the legend's hint says it. */
+  hint: string
+  /** A control beside the legend that chooses that point, if it can be chosen. */
   point?: ReactNode
 }
 
@@ -83,13 +99,14 @@ type AnchorPlacementFieldsProps = Omit<RelativePointFieldsProps, "label"> & {
  */
 export function AnchorPlacementFields({
   name,
-  point = "Front-left bottom",
+  hint,
+  point,
   ...placement
 }: AnchorPlacementFieldsProps) {
   return (
     <FieldSet aria-label={`${name} placement`}>
       <FieldLegend className="flex w-full items-center justify-between gap-3">
-        <span>Anchor</span>
+        <Hint text={hint}>Anchor</Hint>
         {point}
       </FieldLegend>
       <RelativePointFields label={`${name} anchor`} {...placement} />

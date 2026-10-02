@@ -45,7 +45,7 @@ import { withNotices } from "@/formats/upgrade/plate"
  */
 export type PlatePlacement = Pick<
   PlateSetup,
-  "fixtures" | "deviceId" | "anchors"
+  "fixtures" | "deviceId" | "anchors" | "bedSetupId"
 >
 
 export type ImportContext = {
@@ -182,11 +182,17 @@ export function importProgram(
       ? withProgramFixtures(
           withStockPlacement(setup, marked.placement, {
             workArea: kit.workArea,
+            workAreaOrigin: kit.workAreaOrigin,
+            tableTop: kit.tableTop,
             anchors: kit.factoryAnchors(setup.deviceId),
           }),
           marked.fixtures,
           context.fixtureProfiles
-            ? deviceDefinitions(context.fixtureProfiles, setup.deviceId)
+            ? deviceDefinitions(
+                context.fixtureProfiles,
+                setup.deviceId,
+                setup.bedSetupId
+              )
             : []
         )
       : { setup, notices: [] }

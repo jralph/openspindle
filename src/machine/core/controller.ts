@@ -595,6 +595,7 @@ export class MachineController {
         totalBytes: parts[0].bytes,
       },
       progress: null,
+      resumedLine: null,
       wait: null,
       faults: [],
       measurements: [],
@@ -730,9 +731,10 @@ export class MachineController {
 
   /**
    * Stores anchor positions in the machine's configuration and reads them back: never while a
-   * program runs, and never retried. Once a setting was sent, a failure leaves the stored
-   * anchors unknown until they are read again. The machine's own moves use them after it
-   * restarts.
+   * program runs, and never retried. Once a setting of its own anchors was sent, a failure
+   * leaves the stored anchors unknown until they are read again; a write of the anchors its user
+   * added alone leaves what was read, as the next write reads their places again. The machine's
+   * own moves use its own anchors after it restarts.
    */
   async writeAnchors(input: unknown): Promise<WriteAnchorsResult> {
     const request = parse(WriteAnchorsRequestSchema, input)
@@ -747,10 +749,12 @@ export class MachineController {
         this.anchors = { value, reading: false, error: null }
         return {
           anchors: value,
-          afterRestart: this.adapter.anchors?.write?.afterRestart ?? false,
+          afterRestart:
+            !!request.anchors &&
+            (this.adapter.anchors?.write?.afterRestart ?? false),
         }
       } catch (error) {
-        if (progress.sent)
+        if (progress.sent && request.anchors)
           this.anchors = {
             value: null,
             reading: false,
@@ -900,6 +904,7 @@ export class MachineController {
       phase: update.phase,
       part: this.tracker?.part ?? job.part,
       progress: update.progress,
+      resumedLine: update.resumedLine,
       wait: update.wait,
       faults: [...update.faults],
       measurements: [...update.measurements],

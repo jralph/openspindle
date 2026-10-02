@@ -14,7 +14,8 @@ import type {
   StageRule,
 } from "../rules/stages"
 import { placementContext } from "./placement"
-import type { AnchorPlacement, PlacementContext } from "./placement"
+import type { PlacementContext } from "./placement"
+import { outlineTarget } from "./tasks/outline/params"
 
 /** What a probing operation's advice offers: editing the operation. */
 export const editOperation: RuleFixes<OperationRuleSubject, QuickFix> = {
@@ -24,19 +25,28 @@ export const editOperation: RuleFixes<OperationRuleSubject, QuickFix> = {
 }
 
 /**
- * An anchored probing operation (a grid, a touch-off or 3D probing) among Run's subjects: the
- * anchor it travels to, and where its plate places it; null for any other subject.
+ * An anchored probing operation among Run's subjects (a grid, a touch-off or 3D probing from a
+ * stored anchor, or an outline tracing edges, from the first): the anchor it travels from, and
+ * where its plate places it; null for any other subject. An edges trace counts without anchors,
+ * which it needs.
  */
 function anchoredProbing({ plate, operation }: RunRuleSubject): {
-  readonly placement: AnchorPlacement
+  readonly anchorId: string
   readonly plate: PlacementContext
 } | null {
   if (!plate || !operation) return null
   const { source } = operation
-  if (source.kind !== "probing" || source.task === "outline") return null
+  if (source.kind !== "probing") return null
+  if (source.task === "outline")
+    return outlineTarget(source.params).kind === "edges"
+      ? {
+          anchorId: plate.setup.anchors?.anchors[0]?.id ?? "",
+          plate: placementContext(plate),
+        }
+      : null
   const { placement } = source.params
   return placement.kind === "anchor"
-    ? { placement, plate: placementContext(plate) }
+    ? { anchorId: placement.anchorId, plate: placementContext(plate) }
     : null
 }
 
@@ -106,7 +116,7 @@ const probingAnchorsChanged: StageRule<"run"> = {
   stage: "run",
   label: "Probing anchors unchanged",
   description:
-    "The connected device must still store the anchors of the plate's snapshot, the probing operation's among them.",
+    "The connected device must still store the anchors of the plate's snapshot, the probing operation's among them, or for an anchor of the plate's bed setup, the first it is kept from.",
   severity: "error",
   configurable: false,
   chain: PROBING_CHAIN,
@@ -129,10 +139,12 @@ const probingAnchorsChanged: StageRule<"run"> = {
           Math.abs(anchor.machinePosition[0] - x) <= EPSILON &&
           Math.abs(anchor.machinePosition[1] - y) <= EPSILON
       )
-    return (
-      live.some((anchor) => anchor.id === anchored.placement.anchorId) &&
-      live.every(saved)
+    // An anchor the plate's bed setup keeps is the first device anchor plus its offset.
+    const placed = setup.anchors.find(
+      (anchor) => anchor.id === anchored.anchorId
     )
+    const stored = placed?.bedSetup ? setup.anchors[0].id : anchored.anchorId
+    return live.some((anchor) => anchor.id === stored) && live.every(saved)
   },
   explain: ({ first }) => ({
     problem: "Stored anchors changed. Use Read anchors before Run.",
@@ -142,9 +154,10 @@ const probingAnchorsChanged: StageRule<"run"> = {
 }
 
 /**
- * What Run needs of an anchored probing operation (a grid, a touch-off or 3D probing): the
- * plate's anchor snapshot read from the connected device, which the plate is set up for, and
- * still matching the device's stored anchors. Generation blockers block Run as compile errors.
+ * What Run needs of an anchored probing operation (a grid, a touch-off or 3D probing from a
+ * stored anchor, or an outline tracing edges): the plate's anchor snapshot read from the connected
+ * device, which the plate is set up for, and still matching the device's stored anchors.
+ * Generation blockers block Run as compile errors.
  */
 export const PROBING_RUN_RULES: readonly StageRule<"run">[] = [
   probingAnchorsNotRead,

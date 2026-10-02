@@ -1,5 +1,6 @@
 import { z } from "zod"
 import {
+  DEFAULT_BED_SETUP,
   FIXTURE_PROFILE_LIMIT,
   FixtureProfilesSchema,
   WORKSPACE_PROFILE,
@@ -9,6 +10,7 @@ import { EntityIdSchema, plural } from "@/domain/primitives"
 import { describePath, readOptimistically } from "@/formats/optimistic-read"
 import type { ValuePath } from "@/formats/optimistic-read"
 import type { StoragePort } from "@/platform/host"
+import { upgradeProfileBedFrame } from "@/formats/upgrade/bed-frame"
 import { Repository } from "./repository"
 import type { Decoded } from "./repository"
 
@@ -87,11 +89,47 @@ function decodeFixtures(data: unknown): Decoded<FixtureLibrary> {
   return { value: { selectedId, profiles }, dropped }
 }
 
+/** A profile of version 2, whose fixture definitions become its first bed setup's. */
+function withBedSetups(profile: unknown): unknown {
+  if (!record(profile) || !Object.hasOwn(profile, "definitions")) return profile
+  const { definitions, ...rest } = profile
+  return {
+    ...rest,
+    bedSetups: [
+      { id: DEFAULT_BED_SETUP, name: "Default", definitions, anchors: [] },
+    ],
+    defaultBedSetupId: DEFAULT_BED_SETUP,
+  }
+}
+
+/**
+ * A fixture library of version 2, whose positions had the work area's front-left corner at the
+ * origin: each profile in bed coordinates from Anchor 1 (`upgradeProfileBedFrame`), its fixture
+ * definitions its first bed setup's.
+ */
+function upgradeFixtures(data: unknown): unknown {
+  if (!record(data) || !record(data.profiles)) return data
+  return {
+    ...data,
+    profiles: Object.fromEntries(
+      Object.entries(data.profiles).map(([id, profile]) => [
+        id,
+        withBedSetups(upgradeProfileBedFrame(profile)),
+      ])
+    ),
+  }
+}
+
+/**
+ * Version 3: bed coordinates are from Anchor 1, with Z 0 on the MDF bed's top, and a profile's
+ * fixtures are in bed setups.
+ */
 export function fixtureRepository(storage: StoragePort) {
   return new Repository<FixtureLibrary>(storage, {
     key: "fixtures",
     title: "The fixture library",
-    version: 2,
+    version: 3,
+    upgrade: { oldest: 2, from: upgradeFixtures },
     decode: decodeFixtures,
     encode: (value) => value,
     schema: FixtureLibrarySchema,

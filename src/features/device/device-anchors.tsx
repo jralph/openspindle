@@ -7,6 +7,7 @@ import type {
   StoredAnchorSetup,
 } from "@/domain/anchors/stored-anchors"
 import { CoordinateInput } from "@/components/workspace/coordinate-input"
+import { Hint } from "@/components/workspace/hint"
 import { ReasonButton } from "@/components/workspace/reason-button"
 import {
   Card,
@@ -17,12 +18,16 @@ import {
   CardContent,
 } from "@/components/ui/card"
 import {
-  FieldDescription,
+  Field,
+  FieldContent,
   FieldError,
   FieldGroup,
+  FieldLabel,
   FieldLegend,
   FieldSet,
 } from "@/components/ui/field"
+import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import {
   Table,
   TableHeader,
@@ -41,42 +46,86 @@ const coordinateFormat = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 3,
 })
 
+const STORE_HINT =
+  "The device keeps every bed setup's anchors in its configuration too, besides its own (openspindle.anchor3 and on, each X and Y from the first anchor). OpenSpindle reads them with the device's anchors, and writes them when they change while the device is idle. Their names and bed setups stay in OpenSpindle."
+
+/** Whether the device stores the bed setups' anchors too, and why it did not store them. */
+export type AnchorStoring = {
+  readonly enabled: boolean
+  onChange: (enabled: boolean) => void
+  /** Why the device did not store them when last written, with writing them again. */
+  readonly failed: { readonly error: string; onRetry: () => void } | null
+}
+
+function StoreAnchors({ storing }: { storing: AnchorStoring }) {
+  return (
+    <FieldGroup className="gap-2">
+      <Field orientation="horizontal">
+        <FieldContent>
+          <FieldLabel htmlFor="device-store-anchors">
+            <Hint text={STORE_HINT}>Store bed setup anchors on the device</Hint>
+          </FieldLabel>
+        </FieldContent>
+        <Switch
+          id="device-store-anchors"
+          aria-description={STORE_HINT}
+          checked={storing.enabled}
+          onCheckedChange={storing.onChange}
+        />
+      </Field>
+      {storing.enabled && storing.failed && (
+        <Field orientation="horizontal">
+          <FieldError className="flex items-start gap-2">
+            <CircleAlert
+              className="mt-0.5 size-4 shrink-0"
+              aria-hidden="true"
+            />
+            <span>{storing.failed.error}</span>
+          </FieldError>
+          <Button variant="outline" size="sm" onClick={storing.failed.onRetry}>
+            Write again
+          </Button>
+        </Field>
+      )}
+    </FieldGroup>
+  )
+}
+
+const BED_OFFSET_HINT =
+  "How far the bed and its holes sit from where the machine's kit places them from the first anchor. Only the 3D view uses it; the device is not changed."
+
 /**
- * Where the first anchor sits on the bed model. It registers the machine's anchor coordinates
- * to the bed for display only; it never writes the firmware configuration.
+ * Where the machine's bed model sits from where its kit places it, from the first anchor, the
+ * bed's origin. It aligns the bed's holes with the anchors for display only; it never writes the
+ * firmware configuration.
  */
-function AnchorAlignment({
-  name,
-  position,
+function BedOffset({
+  offset,
   onAlign,
 }: {
-  /** The first anchor's name. */
-  name: string
-  position: AnchorXY
-  onAlign: (position: AnchorXY) => void
+  offset: AnchorXY
+  onAlign: (offset: AnchorXY) => void
 }) {
   return (
     <FieldSet>
-      <FieldLegend>{name} on bed</FieldLegend>
-      <FieldDescription>
-        Aligns the anchors with the bed for the viewer; the device is not
-        changed.
-      </FieldDescription>
+      <FieldLegend>
+        <Hint text={BED_OFFSET_HINT}>Bed offset</Hint>
+      </FieldLegend>
       <FieldGroup className="grid grid-cols-2 gap-3">
-        {(["X", "Y"] as const).map((axis, index) => (
-          <CoordinateInput
-            key={axis}
-            axis={axis}
-            unit="mm"
-            label={`${name} bed ${axis}`}
-            value={position[index]}
-            onCommit={(value) => {
-              const next: AnchorXY = [...position]
-              next[index] = value
-              onAlign(next)
-            }}
-          />
-        ))}
+        <CoordinateInput
+          axis="X"
+          unit="mm"
+          label="Bed offset X"
+          value={offset[0]}
+          onCommit={(value) => onAlign([value, offset[1]])}
+        />
+        <CoordinateInput
+          axis="Y"
+          unit="mm"
+          label="Bed offset Y"
+          value={offset[1]}
+          onCommit={(value) => onAlign([offset[0], value])}
+        />
       </FieldGroup>
     </FieldSet>
   )
@@ -89,16 +138,19 @@ export function DeviceAnchors({
   onAlign,
   action,
   writing,
+  storing,
 }: {
   setup?: StoredAnchorSetup
   loading: boolean
   error?: string
-  /** Moves the first anchor on the bed; absent when the alignment cannot be edited. */
-  onAlign?: (position: AnchorXY) => void
+  /** Moves the machine's bed from where its kit places it; absent when it cannot be edited. */
+  onAlign?: (offset: AnchorXY) => void
   /** Shown in the header, such as reading the anchors again. */
   action?: ReactNode
   /** Changes the machine positions the device stores; absent when it stores none. */
   writing?: AnchorWriting
+  /** Whether the device stores the bed setups' anchors too; absent where it cannot. */
+  storing?: AnchorStoring
 }) {
   const [editing, setEditing] = useState(false)
   if (!setup && !loading && !error && !action) return null
@@ -191,13 +243,12 @@ export function DeviceAnchors({
               onClose={() => setEditing(false)}
             />
           )}
-          {onAlign && (
-            <AnchorAlignment
-              name={setup.anchors[0].name}
-              position={setup.anchor1BedPosition}
-              onAlign={onAlign}
-            />
-          )}
+          {onAlign && <BedOffset offset={setup.bedOffset} onAlign={onAlign} />}
+        </CardContent>
+      )}
+      {storing && (
+        <CardContent>
+          <StoreAnchors storing={storing} />
         </CardContent>
       )}
       {error && (

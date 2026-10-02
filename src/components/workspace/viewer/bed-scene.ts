@@ -11,6 +11,7 @@ import type {
 import {
   fitOrthographicBounds,
   layoutPlates,
+  plateBed,
   plateKit,
   problemAnchor,
   problemMarkerId,
@@ -22,7 +23,7 @@ import { reconcilePlates } from "./plate-identity"
 import { PlateView, bedGrid } from "./plate-view"
 import type { PlatePresentation, PlateViewContext } from "./plate-view"
 import { CLICK_TOLERANCE, SetupArranger } from "./setup-arranger"
-import type { ArrangeEvents, ArrangeView } from "./setup-arranger"
+import type { ArrangeEvents, ArrangeLabel, ArrangeView } from "./setup-arranger"
 import { along } from "./toolpath-view"
 import { ViewerAssets } from "./viewer-assets"
 import type { ModelMeshes } from "./viewer-assets"
@@ -40,6 +41,8 @@ export type ViewerPresentation = {
   selectedLineRanges?: readonly LineRange[]
   /** Program lines each plate leaves out of the view, by plate id. */
   hiddenLineRanges?: Readonly<Record<string, readonly LineRange[]>>
+  /** Fixtures each plate leaves out of the view (their ids), by plate id. */
+  hiddenFixtures?: Readonly<Record<string, readonly string[]>>
   previewLine?: number | null
   previewProbePoint?: number | null
   progress: number
@@ -76,6 +79,7 @@ export type BedSceneEvents = {
 }
 
 const NO_RANGES: readonly LineRange[] = []
+const NO_IDS: readonly string[] = []
 const NO_PROBLEMS: readonly ViewerProblem[] = []
 /** A shown problem whose marker is this far from the view's middle, or farther, is panned to. */
 const REVEAL_REACH = 0.8
@@ -95,6 +99,9 @@ export class BedScene {
   private readonly labels: ReadonlyMap<string, HTMLElement>
   /** Problem markers, by `problemMarkerId`. */
   private readonly problemMarkers: ReadonlyMap<string, HTMLElement>
+  /** The element the arranger's label shows in, such as where a picked point is. */
+  private readonly arrangeLabelElement: { readonly current: HTMLElement | null }
+  private arrangeLabel: ArrangeLabel | null = null
   private readonly events: BedSceneEvents
   private readonly stage: ViewerStage
   private readonly camera = new THREE.OrthographicCamera(
@@ -150,6 +157,7 @@ export class BedScene {
     container: HTMLElement,
     labels: ReadonlyMap<string, HTMLElement>,
     problemMarkers: ReadonlyMap<string, HTMLElement>,
+    arrangeLabel: { readonly current: HTMLElement | null },
     events: BedSceneEvents,
     meshes: ModelMeshes
   ) {
@@ -164,6 +172,7 @@ export class BedScene {
       renderer,
       labels,
       problemMarkers,
+      arrangeLabel,
       events,
       meshes
     )
@@ -174,12 +183,14 @@ export class BedScene {
     renderer: THREE.WebGLRenderer,
     labels: ReadonlyMap<string, HTMLElement>,
     problemMarkers: ReadonlyMap<string, HTMLElement>,
+    arrangeLabel: { readonly current: HTMLElement | null },
     events: BedSceneEvents,
     meshes: ModelMeshes
   ) {
     this.container = container
     this.labels = labels
     this.problemMarkers = problemMarkers
+    this.arrangeLabelElement = arrangeLabel
     this.events = events
     // Until plates are laid out, the perspective view looks at the middle of the bed's top.
     const { min, max } = this.emptyBed.bounds
@@ -252,6 +263,7 @@ export class BedScene {
               this.layout.placements.find(({ id }) => id === plateId)
                 ?.offsetX ?? 0,
             plateAt: (event) => this.plateAt(event),
+            label: (label) => this.showArrangeLabel(label),
           },
           events.arrange
         )
@@ -290,9 +302,9 @@ export class BedScene {
     for (const placement of this.layout.placements) {
       const plate = next[placement.index]
       const view = this.views.get(plate.id)
-      // A view keeps the bed it was made on; a plate set up on another machine is drawn anew.
-      if (view?.machineBed === plateKit(plate).bed)
-        view.update(plate, placement)
+      // A view keeps the bed it was made on; a plate set up on another machine, or with its bed
+      // moved, is drawn anew.
+      if (view?.machineBed === plateBed(plate)) view.update(plate, placement)
       else {
         view?.dispose()
         this.addView(plate, placement)
@@ -323,10 +335,14 @@ export class BedScene {
 
   /** Only plates whose presentation changed update; playback touches the selected plate alone. */
   present(presentation: ViewerPresentation) {
+    const previous = this.presentation
     this.presentation = presentation
     let changed = false
     for (const [id, view] of this.views)
       if (view.present(this.platePresentation(id))) changed = true
+    // The points moves snap to follow the fixtures shown.
+    if (presentation.hiddenFixtures !== previous.hiddenFixtures)
+      this.arranger?.platesChanged()
     if (changed) this.stage.invalidate()
     this.placeLens()
   }
@@ -458,8 +474,10 @@ export class BedScene {
       this.presentation
     const { problems = NO_PROBLEMS, shownProblem } = this.presentation
     const hidden = this.presentation.hiddenLineRanges?.[id] ?? NO_RANGES
+    const hiddenFixtures = this.presentation.hiddenFixtures?.[id] ?? NO_IDS
     const { machineOrigin, liveTool } = this.presentation
     const marked = {
+      hiddenFixtures,
       problems: problems.filter((problem) => problem.plateId === id),
       shownProblem: shownProblem?.plateId === id ? shownProblem.key : null,
       machineOrigin:
@@ -533,6 +551,28 @@ export class BedScene {
       const [x, y, z] = problemAnchor(problem)
       this.pin(marker, [x + offset, y, z])
     }
+    this.pinArrangeLabel()
+  }
+
+  /** Shows the arranger's label beside its point, or hides it (null). */
+  private showArrangeLabel(label: ArrangeLabel | null) {
+    this.arrangeLabel = label
+    const element = this.arrangeLabelElement.current
+    if (element && label) element.textContent = label.text
+    this.pinArrangeLabel()
+  }
+
+  private pinArrangeLabel() {
+    const element = this.arrangeLabelElement.current
+    if (!element) return
+    const label = this.arrangeLabel
+    const offset = label ? this.offsetOf(label.plateId) : null
+    if (!label || offset === null) {
+      element.style.visibility = "hidden"
+      return
+    }
+    const [x, y, z] = label.position
+    this.pin(element, [x + offset, y, z])
   }
 
   /** Puts an overlay element where a point shows, hidden when the point is out of view. */

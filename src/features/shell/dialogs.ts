@@ -16,6 +16,8 @@ export type WorkspaceDialog =
       readonly returnToFusion: boolean
     }
   | { readonly kind: "stock"; readonly plateId: string }
+  /** A fixture of the plate's bed setup to add to it, chosen by its picture. */
+  | { readonly kind: "add-fixture"; readonly plateId: string }
   | {
       readonly kind: "tools"
       /** Assigning a plate's tool table entry; the library is only managed otherwise. */
@@ -34,7 +36,7 @@ export type WorkspaceDialog =
       /** Opens the PCB importer directly. */
       readonly preset?: "pcb"
     }
-  /** A probing operation from a probe of the tool library and a strategy it runs. */
+  /** A probing operation from a strategy and a probe of the tool library that performs it. */
   | { readonly kind: "probing" }
   /** Starting a new project over unsaved changes: save them, discard them, or cancel. */
   | { readonly kind: "new-project" }

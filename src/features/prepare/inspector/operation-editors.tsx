@@ -1,4 +1,4 @@
-import { useId, useMemo } from "react"
+import { useEffect, useId, useMemo } from "react"
 import { FileCode2, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,12 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { useWorkspaceStore } from "@/app/workspace/workspace-context"
 import { placementAnchors } from "@/domain/probing/placement"
-import { strategyFor, strategyReads } from "@/domain/probing/strategies"
+import {
+  methodFor,
+  methodReads,
+  methodSpecs,
+  strategyById,
+} from "@/domain/probing/strategies"
 import type { MachineProbing } from "@/domain/probing/strategy"
 import { kitForPlate } from "@/domain/fixtures/catalog"
 import { closingParkCodes } from "@/domain/compile/nc-unit"
@@ -26,6 +31,7 @@ import type {
   ProbingSourceOf,
 } from "@/domain/operations/operation"
 import type { Plate } from "@/domain/plate/plate"
+import { itemEdges } from "@/domain/plate/item-edges"
 import { localTools } from "@/domain/tools/tool-table"
 import { GridSettings } from "@/features/probing/grid-settings"
 import { OutlineSettings } from "@/features/probing/outline-settings"
@@ -37,6 +43,12 @@ import type { WorkAreaFit } from "@/features/probing/probing-form"
 import { openDialog } from "@/features/shell/dialogs"
 import { anchorDisplayName, bedAnchors } from "@/domain/anchors/stored-anchors"
 import { ProbingChoiceFields } from "./probing-choice-fields"
+import type { ProbingPick } from "@/features/probing/probing-fields"
+import {
+  currentPicking,
+  setPicking,
+  usePicking,
+} from "../arrange/arrange-state"
 
 type EditorProps<TKind extends OperationSource["kind"]> = {
   plate: Plate
@@ -171,7 +183,37 @@ function useWorkArea(plate: Plate): WorkAreaFit {
   )
 }
 
-/** A probing task's settings editor: its operation, on a machine that has its strategy. */
+/**
+ * Picking for an operation in the 3D view: a point to start it at, or edges for it to trace.
+ * Picking ends when its editor goes, such as when another operation is selected. A start is
+ * kept from an anchor, so a plate without anchors cannot pick one.
+ */
+function usePick(
+  plate: Plate,
+  operationId: string,
+  kind: "point" | "edges"
+): ProbingPick {
+  const picking = usePicking()
+  useEffect(
+    () => () => {
+      if (currentPicking()?.operationId === operationId) setPicking(null)
+    },
+    [operationId]
+  )
+  const active = picking?.operationId === operationId && picking.kind === kind
+  const reason =
+    kind === "point" && !placementAnchors(plate.setup).length
+      ? "Read the device's anchors: a picked start is kept from one."
+      : null
+  return {
+    picking: active,
+    reason,
+    onPick: () =>
+      setPicking(active ? null : { kind, plateId: plate.id, operationId }),
+  }
+}
+
+/** A probing task's settings editor: its operation, on a machine that supports its strategy. */
 type TaskEditorProps<TSource> = {
   plate: Plate
   operation: ProbingOperation & { source: TSource }
@@ -184,17 +226,19 @@ function GridEditor({
   machine,
 }: TaskEditorProps<ProbingSourceOf<"grid">>) {
   const update = useSourceUpdate(plate, operation.id, operation.revision)
+  const pick = usePick(plate, operation.id, "point")
   const workArea = useWorkArea(plate)
   const { source } = operation
-  const strategy = strategyFor(source, machine)
-  if (!strategy) return null
+  const parameters = methodSpecs(source, machine, plate)
+  if (!parameters) return null
   return (
     <GridSettings
       key={operation.id}
       value={source.params}
-      parameters={strategy.parameters(machine)}
+      parameters={parameters}
       anchors={anchorOptions(plate)}
       workArea={workArea}
+      pick={pick}
       onChange={(params) => update({ ...source, params })}
     />
   )
@@ -206,18 +250,21 @@ function TouchOffEditor({
   machine,
 }: TaskEditorProps<ProbingSourceOf<"touch-off">>) {
   const update = useSourceUpdate(plate, operation.id, operation.revision)
+  const pick = usePick(plate, operation.id, "point")
   const workArea = useWorkArea(plate)
   const { source } = operation
-  const strategy = strategyFor(source, machine)
-  if (!strategy) return null
+  // The method follows the settings: an anchored start can let the machine's own cycle touch off.
+  const method = methodFor(source, machine, plate)
+  if (!method) return null
   return (
     <TouchOffSettings
       key={operation.id}
       value={source.params}
-      parameters={strategy.parameters(machine)}
-      reads={strategyReads(strategy, source.params, machine)}
+      parameters={method.parameters(machine)}
+      reads={methodReads(method, source.params, machine)}
       anchors={anchorOptions(plate)}
       workArea={workArea}
+      pick={pick}
       onChange={(params) => update({ ...source, params })}
     />
   )
@@ -230,49 +277,57 @@ function OutlineEditor({
 }: TaskEditorProps<ProbingSourceOf<"outline">>) {
   const update = useSourceUpdate(plate, operation.id, operation.revision)
   const outline = useMemo(() => plateToolpathBounds(plate), [plate])
+  const edges = useMemo(() => itemEdges(plate.setup), [plate.setup])
+  const pick = usePick(plate, operation.id, "edges")
   const { source } = operation
-  const strategy = strategyFor(source, machine)
-  if (!strategy) return null
+  const parameters = methodSpecs(source, machine, plate)
+  if (!parameters) return null
   return (
     <OutlineSettings
       key={operation.id}
       value={source.params}
-      parameters={strategy.parameters(machine)}
+      parameters={parameters}
       outline={outline}
+      edges={edges}
+      hasStock={!!plate.setup.stock}
+      pick={pick}
       onChange={(params) => update({ ...source, params })}
     />
   )
 }
 
-/** An origin task's settings: the routine, and where it starts. */
+/** An origin task's settings: what its strategy finds, and where it starts. */
 function OriginEditor({
   plate,
   operation,
   machine,
 }: TaskEditorProps<ProbingSourceOf<"origin">>) {
   const update = useSourceUpdate(plate, operation.id, operation.revision)
+  const pick = usePick(plate, operation.id, "point")
   const { source } = operation
-  const strategy = strategyFor(source, machine)
-  if (!strategy) return null
+  const parameters = methodSpecs(source, machine, plate)
+  if (!parameters) return null
   return (
     <OriginSettings
       key={operation.id}
       value={source.params}
-      parameters={strategy.parameters(machine)}
+      parameters={parameters}
       anchors={anchorOptions(plate)}
+      pick={pick}
       onChange={(params) => update({ ...source, params })}
     />
   )
 }
 
 /**
- * A probing operation's probe and strategy, then its task's settings. Without the strategy on the
- * plate's machine it has no settings; its diagnostic above says why.
+ * A probing operation's strategy and probe, then its task's settings. Without a method for its
+ * strategy on the plate's machine it has no settings; its diagnostic above says why.
  */
 function ProbingEditor({ plate, operation }: EditorProps<"probing">) {
   const machine = kitForPlate(plate).probing
-  const strategy = machine && strategyFor(operation.source, machine)
-  if (!machine || !strategy) return null
+  const strategy = strategyById(operation.source.strategy)
+  if (!machine || !strategy || !methodFor(operation.source, machine, plate))
+    return null
   return (
     <>
       <ProbingChoiceFields

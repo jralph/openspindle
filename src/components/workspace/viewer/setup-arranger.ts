@@ -11,7 +11,11 @@ import type {
   SetupPoint,
 } from "@/domain/plate/setup-items"
 import type { Point3 } from "@/domain/nc/gcode"
-import { WORK_AXIS_LENGTH, plateSetupPoints } from "../bed-viewer-layout"
+import { sameEdge } from "@/domain/plate/item-edges"
+import type { ItemEdge, ItemEdgeRef } from "@/domain/plate/item-edges"
+import type { PickTarget } from "@/domain/plate/pick-targets"
+import { WORK_AXIS_LENGTH, plateItemEdges } from "../bed-viewer-layout"
+import type { EdgeHighlight } from "./edge-highlights"
 import type { PlateView } from "./plate-view"
 import type { Marker, MarkerStyle } from "./setup-markers"
 
@@ -19,8 +23,13 @@ import type { Marker, MarkerStyle } from "./setup-markers"
 export const CLICK_TOLERANCE = 5
 /** How near the pointer must be to a point to pick it, in CSS pixels. */
 const PICK_RADIUS = 9
-/** How near a moving point must come to another point to snap to it, in CSS pixels. */
+/**
+ * How near a moving point must come to another point to snap to it, and a picked point to a
+ * target, in CSS pixels.
+ */
 const SNAP_RADIUS = 10
+/** How near an edge, in CSS pixels, the pointer picks it. */
+const EDGE_RADIUS = 10
 /** How near the pointer must be to the work origin's axes to pick the design. */
 const DESIGN_RADIUS = 8
 /** Free moves step by a tenth of a millimetre. */
@@ -37,6 +46,31 @@ export type ArrangeSelection = {
   readonly item: SetupItemRef
 }
 
+/**
+ * Picking for an operation on one plate: a point to start it at, or edges for it to trace. While
+ * it lasts, clicks pick instead of selecting, and nothing moves.
+ */
+export type ArrangePicking =
+  | {
+      readonly kind: "point"
+      readonly plateId: string
+      /** What a picked point snaps to, marked while it is picked. */
+      readonly targets: readonly PickTarget[]
+    }
+  | {
+      readonly kind: "edges"
+      readonly plateId: string
+      /** The edges chosen so far, drawn while edges are picked. */
+      readonly edges: readonly ItemEdgeRef[]
+    }
+
+/** A point picked on a plate: a target it snapped to, or else where the pointer met a surface. */
+export type PickedPoint = {
+  /** In bed coordinates. */
+  readonly position: Point3
+  readonly target: PickTarget | null
+}
+
 /** The arrangement the host shows; its owner sets it on every change. */
 export type ArrangeView = {
   readonly selection: ArrangeSelection | null
@@ -44,6 +78,7 @@ export type ArrangeView = {
   readonly moving: boolean
   readonly axes: MoveAxes
   readonly snap: boolean
+  readonly picking: ArrangePicking | null
 }
 
 /** The point picked on the moving item, which the next other point it is aligned to. */
@@ -78,6 +113,17 @@ export type ArrangeEvents = {
   menu: (request: ArrangeMenuRequest) => void
   pick: (pick: ArrangePick) => void
   drag: (drag: ArrangeDrag | null) => void
+  /** A point was clicked while picking a point. */
+  pickPoint: (plateId: string, pick: PickedPoint) => void
+  /** An edge was clicked while picking edges. */
+  pickEdge: (plateId: string, edge: ItemEdgeRef) => void
+}
+
+/** Text the host shows beside a point of a plate's bed (in bed coordinates). */
+export type ArrangeLabel = {
+  readonly plateId: string
+  readonly position: Point3
+  readonly text: string
 }
 
 /** What the arranger uses of the scene. */
@@ -95,6 +141,8 @@ export type ArrangeHost = {
   offset: (plateId: string) => number
   /** The plate whose area is under the pointer. */
   plateAt: (event: MouseEvent) => string | null
+  /** Shows a label beside a point, or hides it (null). */
+  label: (label: ArrangeLabel | null) => void
 }
 
 type ItemUnderPointer = {
@@ -171,6 +219,12 @@ const millimetres = (value: number) => Number(value.toFixed(3))
 const pointTitle = ({ label, position: [x, y, z] }: SetupPoint) =>
   `${label} · X ${millimetres(x)}, Y ${millimetres(y)}, Z ${millimetres(z)} mm`
 
+/** A picked point's bed X and Y, under the target it snapped to. */
+function pickedText({ position: [x, y], target }: PickedPoint) {
+  const at = `X ${x.toFixed(3)}, Y ${y.toFixed(3)} mm`
+  return target ? `${target.label}\n${at}` : at
+}
+
 function distanceToSegment(
   point: { x: number; y: number },
   a: { x: number; y: number },
@@ -229,9 +283,14 @@ export class SetupArranger {
     moving: false,
     axes: "xy",
     snap: true,
+    picking: null,
   }
   private from: SetupPoint | null = null
   private hover: SetupPoint | null = null
+  /** What a click would pick while a point is picked. */
+  private hoverPick: PickedPoint | null = null
+  /** The edge under the pointer while edges are picked. */
+  private hoverEdge: ItemEdge | null = null
   private drag: Drag | null = null
   private press: Press | null = null
   /** A committed move, drawn until a new version of its plate (which carries it) arrives. */
@@ -256,6 +315,9 @@ export class SetupArranger {
       this.state.selection,
       state.selection
     )
+    const pickingChanged =
+      this.state.picking?.kind !== state.picking?.kind ||
+      this.state.picking?.plateId !== state.picking?.plateId
     this.state = state
     if (selectionChanged || !state.moving) {
       this.cancelDrag()
@@ -263,9 +325,13 @@ export class SetupArranger {
       this.from = null
       this.reportPick({ from: null, notice: null })
     }
-    if (!state.moving) {
+    // Picking keeps what is under the pointer while its choices change.
+    if ((!state.moving && !state.picking) || pickingChanged) {
       this.hover = null
-      this.host.canvas.style.cursor = ""
+      this.hoverEdge = null
+      this.hoverPick = null
+      this.host.label(null)
+      this.host.canvas.style.cursor = state.picking ? "crosshair" : ""
       this.host.canvas.removeAttribute("title")
     }
     this.refresh()
@@ -279,9 +345,10 @@ export class SetupArranger {
     const from = this.from
     const selection = this.state.selection
     if (from && selection) {
-      const plate = this.host.view(selection.plateId)?.plate
-      const current =
-        plate && plateSetupPoints(plate).find((point) => point.key === from.key)
+      const current = this.host
+        .view(selection.plateId)
+        ?.setupPoints()
+        .find((point) => point.key === from.key)
       if (
         !current ||
         current.position.some((value, axis) => value !== from.position[axis])
@@ -292,8 +359,9 @@ export class SetupArranger {
   }
 
   pointerDown(event: PointerEvent) {
-    const { selection, moving } = this.state
+    const { selection, moving, picking } = this.state
     if (
+      picking ||
       !moving ||
       !selection ||
       event.button !== 0 ||
@@ -327,7 +395,7 @@ export class SetupArranger {
   ) {
     const view = this.host.view(selection.plateId)
     if (!view) return
-    const points = plateSetupPoints(view.plate)
+    const points = view.setupPoints()
     this.drag = {
       pointerId,
       plateId: selection.plateId,
@@ -383,7 +451,11 @@ export class SetupArranger {
       }
       return true
     }
-    if (!this.state.moving || !this.state.selection || event.buttons)
+    const picking = !!this.state.picking
+    if (
+      (!picking && (!this.state.moving || !this.state.selection)) ||
+      event.buttons
+    )
       return false
     // Hovering looks for points and the item under the pointer once per frame.
     this.hoverEvent = event
@@ -421,8 +493,23 @@ export class SetupArranger {
     return false
   }
 
-  /** A click that was not a drag: selects, or opens the menu for a secondary click. */
+  /**
+   * A click that was not a drag: selects, or opens the menu for a secondary click. While picking
+   * it picks what is under the pointer, and selects nothing.
+   */
   click(event: PointerEvent, secondary: boolean) {
+    const { picking } = this.state
+    if (picking) {
+      if (secondary) return
+      if (picking.kind === "point") {
+        const pick = this.pickAt(event)
+        if (pick) this.events.pickPoint(picking.plateId, pick)
+      } else {
+        const edge = this.edgeAt(event)
+        if (edge) this.events.pickEdge(picking.plateId, edge.ref)
+      }
+      return
+    }
     if (secondary) {
       this.openMenu(event)
       return
@@ -433,8 +520,16 @@ export class SetupArranger {
   }
 
   leave() {
-    if (this.drag || this.press || !this.hover) return
+    if (
+      this.drag ||
+      this.press ||
+      (!this.hover && !this.hoverEdge && !this.hoverPick)
+    )
+      return
     this.hover = null
+    this.hoverEdge = null
+    this.hoverPick = null
+    this.host.label(null)
     this.refresh()
   }
 
@@ -480,7 +575,18 @@ export class SetupArranger {
   }
 
   private markersFor(plateId: string): Marker[] | null {
-    const { selection, moving } = this.state
+    const { selection, moving, picking } = this.state
+    if (picking) {
+      // What a picked point snaps to, the one it snaps to now ringed.
+      if (picking.kind !== "point" || picking.plateId !== plateId) return null
+      const snapped = this.hoverPick?.target?.key
+      return picking.targets.flatMap((target) => {
+        const marker: Marker = { position: target.position, style: "target" }
+        return target.key === snapped
+          ? [marker, { ...marker, ring: true }]
+          : [marker]
+      })
+    }
     if (!moving || selection?.plateId !== plateId) return null
     const view = this.host.view(plateId)
     if (!view) return null
@@ -493,7 +599,7 @@ export class SetupArranger {
         (point) => point?.key ?? []
       )
     )
-    return plateSetupPoints(view.plate).flatMap((point) => {
+    return view.setupPoints().flatMap((point) => {
       const own = this.isOwn(point)
       const position = own ? plus(point.position, delta) : point.position
       const style = this.markerStyle(point, own)
@@ -509,8 +615,53 @@ export class SetupArranger {
     for (const [plateId, view] of this.host.views()) {
       view.select(selection?.plateId === plateId ? selection.item : null)
       view.showMarkers(this.markersFor(plateId))
+      view.showEdges(this.edgesFor(plateId))
     }
     this.host.invalidate()
+  }
+
+  /** The edges chosen so far and the one under the pointer, while edges are picked. */
+  private edgesFor(plateId: string): EdgeHighlight[] | null {
+    const { picking } = this.state
+    const view = this.host.view(plateId)
+    if (picking?.kind !== "edges" || picking.plateId !== plateId || !view)
+      return null
+    const hovered = this.hoverEdge
+    const chosen = plateItemEdges(view.plate).filter(
+      (edge) =>
+        picking.edges.some((ref) => sameEdge(ref, edge.ref)) &&
+        !(hovered && sameEdge(hovered.ref, edge.ref))
+    )
+    return [
+      ...chosen.map(({ start, end }) => ({ start, end, hovered: false })),
+      ...(hovered
+        ? [{ start: hovered.start, end: hovered.end, hovered: true }]
+        : []),
+    ]
+  }
+
+  /** The edge of the picking plate nearest the pointer on screen, within reach. */
+  private edgeAt(event: MouseEvent): ItemEdge | null {
+    const { picking } = this.state
+    if (picking?.kind !== "edges") return null
+    const view = this.host.view(picking.plateId)
+    if (!view) return null
+    const rect = this.host.canvas.getBoundingClientRect()
+    const at = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    let best: ItemEdge | null = null
+    let nearest = EDGE_RADIUS
+    for (const edge of plateItemEdges(view.plate)) {
+      const distance = distanceToSegment(
+        at,
+        this.screen(picking.plateId, edge.start, rect),
+        this.screen(picking.plateId, edge.end, rect)
+      )
+      if (distance < nearest) {
+        best = edge
+        nearest = distance
+      }
+    }
+    return best
   }
 
   private setFrom(point: SetupPoint | null) {
@@ -566,17 +717,18 @@ export class SetupArranger {
     }
   }
 
-  /** The point of the selected plate nearest the pointer, as `betterPick` weighs them. */
+  /** The point of the selected plate nearest the pointer in move mode, as `betterPick` weighs. */
   private pointAt(event: MouseEvent): SetupPoint | null {
-    const selection = this.state.selection
-    if (!this.state.moving || !selection) return null
-    const view = this.host.view(selection.plateId)
+    const { selection, moving, picking } = this.state
+    const plateId = moving && !picking ? selection?.plateId : undefined
+    if (!plateId) return null
+    const view = this.host.view(plateId)
     if (!view) return null
     const rect = this.host.canvas.getBoundingClientRect()
     const at = { x: event.clientX - rect.left, y: event.clientY - rect.top }
     let best: PointPick | null = null
-    for (const point of plateSetupPoints(view.plate)) {
-      const shown = this.screen(selection.plateId, point.position, rect)
+    for (const point of view.setupPoints()) {
+      const shown = this.screen(plateId, point.position, rect)
       const distance = Math.hypot(shown.x - at.x, shown.y - at.y)
       if (distance > PICK_RADIUS) continue
       const candidate = {
@@ -642,6 +794,59 @@ export class SetupArranger {
     return best
   }
 
+  /**
+   * What a click picks while a point is picked: the target nearest the pointer within the snap
+   * radius, unless Alt is held, else the point of a shown surface of the plate (the bed, a
+   * fixture, the stock) under it; null over neither.
+   */
+  private pickAt(event: MouseEvent): PickedPoint | null {
+    const { picking } = this.state
+    if (picking?.kind !== "point") return null
+    const target = event.altKey
+      ? null
+      : this.targetAt(event, picking.plateId, picking.targets)
+    if (target) return { position: target.position, target }
+    const view = this.host.view(picking.plateId)
+    if (!view) return null
+    this.host.aim(event)
+    const hit = view.itemHit(this.host.raycaster)
+    if (!hit) return null
+    const { x, y, z } = hit.point
+    const position: Point3 = [
+      millimetres(x - this.host.offset(picking.plateId)) + 0,
+      millimetres(y) + 0,
+      millimetres(z) + 0,
+    ]
+    return { position, target: null }
+  }
+
+  /**
+   * The target nearest the pointer on screen, within the snap radius; of two within a pixel of
+   * each other, the one nearer to the eye.
+   */
+  private targetAt(
+    event: MouseEvent,
+    plateId: string,
+    targets: readonly PickTarget[]
+  ): PickTarget | null {
+    const rect = this.host.canvas.getBoundingClientRect()
+    const at = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    let best: { target: PickTarget; distance: number; depth: number } | null =
+      null
+    for (const target of targets) {
+      const shown = this.screen(plateId, target.position, rect)
+      const distance = Math.hypot(shown.x - at.x, shown.y - at.y)
+      if (distance > SNAP_RADIUS) continue
+      const better =
+        !best ||
+        (Math.abs(distance - best.distance) > 1
+          ? distance < best.distance
+          : shown.depth < best.depth)
+      if (better) best = { target, distance, depth: shown.depth }
+    }
+    return best?.target ?? null
+  }
+
   /** The item under the pointer, the nearest along the picking ray. */
   private itemAt(event: MouseEvent): ItemUnderPointer | null {
     const design = this.designAt(event)
@@ -662,6 +867,10 @@ export class SetupArranger {
   }
 
   private hoverAt(event: PointerEvent) {
+    if (this.state.picking) {
+      this.pickHoverAt(event)
+      return
+    }
     // Move mode may have ended since the pointer moved.
     const { moving, selection } = this.state
     if (!moving || !selection) return
@@ -683,6 +892,43 @@ export class SetupArranger {
       hit.plateId === selection.plateId &&
       sameSetupItem(hit.item, selection.item)
     canvas.style.cursor = onSelected ? "grab" : ""
+  }
+
+  /**
+   * What a click would pick: a point, labelled with where it is and the target it snapped to,
+   * or an edge with its name.
+   */
+  private pickHoverAt(event: PointerEvent) {
+    const { picking } = this.state
+    if (!picking) return
+    const canvas = this.host.canvas
+    if (picking.kind === "point") {
+      const pick = this.pickAt(event)
+      const snapped = pick?.target?.key !== this.hoverPick?.target?.key
+      this.hoverPick = pick
+      this.host.label(
+        pick && {
+          plateId: picking.plateId,
+          position: pick.position,
+          text: pickedText(pick),
+        }
+      )
+      if (snapped) this.refresh()
+      canvas.style.cursor = pick?.target ? "pointer" : "crosshair"
+      return
+    }
+    const edge = this.edgeAt(event)
+    const changed =
+      !edge || !this.hoverEdge
+        ? edge !== this.hoverEdge
+        : !sameEdge(edge.ref, this.hoverEdge.ref)
+    if (changed) {
+      this.hoverEdge = edge
+      this.refresh()
+    }
+    if (edge) canvas.title = edge.label
+    else canvas.removeAttribute("title")
+    canvas.style.cursor = edge ? "pointer" : "crosshair"
   }
 
   /** Where the grabbed point goes: on the bed-parallel plane through it, or along one axis. */

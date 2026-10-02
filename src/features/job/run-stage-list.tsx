@@ -26,9 +26,15 @@ import {
   findsCorner,
 } from "@/domain/probing/tasks/origin/params"
 import type { OriginParams } from "@/domain/probing/tasks/origin/params"
-import { originResult } from "@/domain/probing/tasks/origin/result"
+import {
+  foundPosition,
+  originResult,
+} from "@/domain/probing/tasks/origin/result"
 import { placementHeight } from "@/domain/probing/placement"
-import { SURFACE_TOUCH } from "@/domain/probing/generic/surface-touch"
+import { outlineTarget } from "@/domain/probing/tasks/outline/params"
+import { itemEdges, sameEdge } from "@/domain/plate/item-edges"
+import { kitForPlate } from "@/domain/fixtures/catalog"
+import { methodFor } from "@/domain/probing/strategies"
 import {
   PROBE_3D_TOOL,
   PROBE_TOOL,
@@ -55,6 +61,7 @@ import { EndedStage, FinishingStage, TransferStage } from "./job-stages"
 import type { JobSubject, JobView } from "./job-view"
 import { PausePrompt } from "./pause-prompt"
 import { RunChecklistCard } from "./run-checklist-card"
+import { SaveAsAnchor } from "./save-as-anchor"
 import type { RunChecklist } from "./run-checklist"
 import { useReadAnchorsFix } from "@/features/prepare/quick-fix"
 import { runStages } from "./run-stages"
@@ -139,6 +146,18 @@ function operationSummary(
       const [columns, rows] = probing.params.points
       const [width, depth] = probing.params.size
       return `Probes ${columns} × ${rows} points over ${mm(width)} × ${mm(depth)} mm.`
+    }
+    case "outline": {
+      const target = outlineTarget(probing.params)
+      if (target.kind === "toolpath")
+        return "Traces the plate's toolpath bounds with the probe's pointer."
+      const edges = itemEdges(subject.plate.setup)
+      const names = target.edges.map(
+        (ref) =>
+          edges.find((edge) => sameEdge(edge.ref, ref))?.label ??
+          `a missing ${ref.side} edge`
+      )
+      return `Traces ${names.join(", ")} with the probe's pointer.`
     }
     case "origin": {
       const { placement } = probing.params
@@ -259,14 +278,22 @@ function Height({ z }: { z: number }) {
   )
 }
 
-/** Where a 3D probing routine set the work origin, from the contacts it reported. */
+/**
+ * Where a 3D probing routine set the work origin, from the contacts it reported, and once it is
+ * done the machine X and Y it found, to keep as an anchor.
+ */
 function probe3dFacts(
   params: OriginParams,
   ball: number,
   { contacts }: ContactsMeasurement,
   status: StageStatus
-): { description: ReactNode; facts: Fact[] } {
+): {
+  description: ReactNode
+  facts: Fact[]
+  found: readonly [number, number] | null
+} {
   const result = originResult(params, ball, contacts)
+  const found = status === "done" ? foundPosition(result) : null
   const set = (["X", "Y"] as const).flatMap((axis, index) => {
     const value = result.origin[index]
     return value === null ? [] : [{ axis, value }]
@@ -282,12 +309,13 @@ function probe3dFacts(
     })
   facts.push({ label: "Contacts", value: String(contacts.length) })
   if (!result.complete || !set.length)
-    return { description: probe3dUnfinished(params, status), facts }
-  const found = findsCorner(params.routine) ? "corner" : "center"
+    return { description: probe3dUnfinished(params, status), facts, found }
+  const feature = findsCorner(params.routine) ? "corner" : "center"
   return {
+    found,
     description: (
       <>
-        Found the {found} and set work{" "}
+        Found the {feature} and set work{" "}
         {set.map(({ axis }) => (
           <Fragment key={axis}>
             <AxisLabel axis={axis} />0{" "}
@@ -330,6 +358,7 @@ function operationResults(
   const { operation, surface, grid, contacts, status } = stage
   const facts: Fact[] = []
   let description: ReactNode = null
+  let found: readonly [number, number] | null = null
   const { source } = operation
   // The probe's ball, as the plate's table held it when the job ran.
   const probeId =
@@ -346,6 +375,7 @@ function operationResults(
     const probed = probe3dFacts(source.params, ball, contacts, status)
     description = probed.description
     facts.push(...probed.facts)
+    found = probed.found
   }
   if (surface) {
     const [x, y, z] = surface.machine
@@ -382,20 +412,28 @@ function operationResults(
       label: sensorLabel(tool.tool),
       value: <Height z={tool.machine[2]} />,
     })
-  const probing =
+  if (
+    !surface &&
+    !grid &&
+    status === "done" &&
     source.kind === "probing" &&
     (source.task === "touch-off" || source.task === "grid")
-  if (!surface && !grid && status === "done" && probing)
+  ) {
+    // OpenSpindle's own touch-off reports nothing; the machine's cycles report from an anchor.
+    const machine = kitForPlate(subject.plate).probing
+    const method = machine && methodFor(source, machine, subject.plate)
     description =
-      source.strategy === SURFACE_TOUCH.id
-        ? "The machine does not report a surface touch's measurement: it touches with G38.2."
+      machine && method && !machine.cycles.includes(method)
+        ? "The machine does not report this touch's measurement: it touches with G38.2."
         : "The machine reports its measurements only when it probes from a stored anchor with the work origin kept relative to one."
+  }
   return {
     description: description ?? operationSummary(operation, subject, tools),
     details: (
       <>
         {facts.length > 0 && <HeightMapFacts facts={facts} />}
         {grid && <HeightMapGrid map={gridMap(grid)} compact />}
+        {found && <SaveAsAnchor position={found} plate={subject.plate} />}
       </>
     ),
   }
