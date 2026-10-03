@@ -13,6 +13,7 @@ import { toMicrometre } from "@/domain/primitives"
 import type { FixtureBounds, FixtureModel } from "@/domain/fixtures/definitions"
 import type { Point3 } from "@/domain/nc/gcode"
 import type { MountPoint } from "@/domain/fixtures/mount-points"
+import type { SurfaceFinish } from "@/domain/materials/surface-material"
 import { disposeObjects, inFixtureFrame } from "@/lib/three-assets"
 
 /** What the preview shows: a fixture's model in its frame, in the fixture's finish, with its points. */
@@ -20,13 +21,15 @@ export type FixtureModelView = {
   readonly model: FixtureModel
   readonly points: readonly MountPoint[]
   readonly color: string
-  /** Beds and wasteboards are drawn matte, the rest metallic, as on the plate. */
-  readonly matte: boolean
+  /** How shiny it is, as on the plate (`definitionFinish`). */
+  readonly finish: SurfaceFinish
 }
 
 export type FixtureModelSceneEvents = {
   /** The model was turned: onto a clicked face, or by a quarter turn. */
   orient: (orientation: Point3) => void
+  /** The 3D view could not start: neither WebGPU nor WebGL 2 is available. */
+  unavailable: () => void
 }
 
 /** A flat face of one of the model's meshes, drawn over in the primary colour. */
@@ -188,24 +191,15 @@ export class FixtureModelScene {
   } | null = null
   private pointerStart: { x: number; y: number; id: number } | null = null
 
-  /** Returns null when WebGL is unavailable. */
+  /** Reports `events.unavailable` when neither WebGPU nor WebGL 2 is available. */
   static create(container: HTMLElement, events: FixtureModelSceneEvents) {
-    let renderer: THREE.WebGLRenderer
-    try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    } catch {
-      return null
-    }
-    return new FixtureModelScene(container, renderer, events)
+    return new FixtureModelScene(container, events)
   }
 
-  private constructor(
-    container: HTMLElement,
-    renderer: THREE.WebGLRenderer,
-    events: FixtureModelSceneEvents
-  ) {
+  private constructor(container: HTMLElement, events: FixtureModelSceneEvents) {
     this.events = events
-    this.stage = new ViewerStage(container, renderer, this.frame, {
+    this.stage = new ViewerStage(container, this.frame, {
+      unavailable: () => events.unavailable(),
       resize: (width, height) => {
         this.camera.aspect = width / height
         this.camera.updateProjectionMatrix()
@@ -222,7 +216,8 @@ export class FixtureModelScene {
       polygonOffsetUnits: -2,
       toneMapped: false,
     })
-    this.markers = new SetupMarkers(palette.primary, renderer.getPixelRatio())
+    const { renderer } = this.stage
+    this.markers = new SetupMarkers(palette.primary)
     this.camera.up.set(0, 0, 1)
     this.controls = new OrbitControls(this.camera, renderer.domElement)
     this.controls.enableDamping = false
@@ -309,8 +304,8 @@ export class FixtureModelScene {
     }
     const { model } = view
     this.material.color.set(view.color)
-    this.material.metalness = view.matte ? 0 : 0.5
-    this.material.roughness = view.matte ? 0.95 : 0.55
+    this.material.metalness = view.finish.metalness
+    this.material.roughness = view.finish.roughness
     if (this.template) {
       const clone = this.template.clone(true)
       clone.traverse((child) => {

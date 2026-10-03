@@ -7,10 +7,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useEffect, useRef, useState } from "react"
+import type { FrameSource } from "@/app/job/frame"
 import { useHost } from "@/platform/host-context"
 import { plateLabel } from "@/domain/plate/plate"
 import type {
-  PlayheadSource,
   ViewerPlate,
   ViewerProblem,
   ViewerProblemRef,
@@ -19,16 +19,17 @@ import { problemMarkerId } from "./bed-viewer-layout"
 import type { LineRange } from "./bed-viewer-layout"
 import { BedScene } from "./viewer/bed-scene"
 import type { LiveTool, MachineOrigin, ViewMode } from "./viewer/bed-scene"
+import type { VisualStyle } from "./viewer/solid-style"
 import type { ArrangeEvents, ArrangeView } from "./viewer/setup-arranger"
 
 export type { Stock } from "@/domain/stock/stock"
 export type {
-  PlayheadSource,
   ViewerPlate,
   ViewerProblem,
   ViewerProblemRef,
 } from "@/components/workspace/viewer/viewer-input"
 export type { LiveTool, MachineOrigin, ViewMode } from "./viewer/bed-scene"
+export type { VisualStyle } from "./viewer/solid-style"
 export type {
   ArrangeDrag,
   ArrangeEvents,
@@ -47,17 +48,18 @@ type Props = {
   hiddenLineRanges?: Readonly<Record<string, readonly LineRange[]>>
   /** Fixtures each plate leaves out of the view (their ids), by plate id. */
   hiddenFixtures?: Readonly<Record<string, readonly string[]>>
-  previewLine?: number | null
-  previewProbePoint?: number | null
   /**
-   * Where simulated playback is along the selected plate's moves, which the scene follows every
-   * frame on its own; without one, it shows up to the line.
+   * The frames of playback the selected plate is drawn at, which the scene follows every frame on
+   * its own; without them, or while they have none, it shows its whole program.
    */
-  playhead?: PlayheadSource
-  progress: number
+  frames?: FrameSource
+  /** @deprecated Ignored: without `frames` the whole program shows. */
+  progress?: number
   showRapids: boolean
   showStock: boolean
   view: ViewMode
+  /** How the solids are drawn; smoothly shaded by default. */
+  style?: VisualStyle
   resetKey: number
   zoom: number
   onZoomChange?: (zoom: number) => void
@@ -85,13 +87,11 @@ export function BedViewer({
   selectedLineRanges,
   hiddenLineRanges,
   hiddenFixtures,
-  previewLine,
-  previewProbePoint,
-  playhead,
-  progress,
+  frames,
   showRapids,
   showStock,
   view,
+  style = "smooth",
   resetKey,
   zoom,
   onZoomChange,
@@ -150,10 +150,6 @@ export function BedViewer({
       },
       (id) => models.mesh(id)
     )
-    if (!scene) {
-      setError("3D view unavailable.")
-      return
-    }
     sceneRef.current = scene
     return () => {
       scene.dispose()
@@ -168,9 +164,6 @@ export function BedViewer({
       selectedLineRanges,
       hiddenLineRanges,
       hiddenFixtures,
-      previewLine,
-      previewProbePoint,
-      progress,
       showRapids,
       showStock,
       problems,
@@ -183,9 +176,6 @@ export function BedViewer({
     selectedLineRanges,
     hiddenLineRanges,
     hiddenFixtures,
-    previewLine,
-    previewProbePoint,
-    progress,
     showRapids,
     showStock,
     problems,
@@ -193,17 +183,17 @@ export function BedViewer({
     machineOrigin,
     liveTool,
   ])
-  // Playback moves the playhead every frame: the scene follows it without a render here.
+  // Playback sets a frame every frame: the scene follows it without a render here.
   useEffect(() => {
-    if (!playhead) return
-    const follow = () => sceneRef.current?.setPlayhead(playhead.get())
+    if (!frames) return
+    const follow = () => sceneRef.current?.setFrame(frames.get())
     follow()
-    const unsubscribe = playhead.subscribe(follow)
+    const unsubscribe = frames.subscribe(follow)
     return () => {
       unsubscribe()
-      sceneRef.current?.setPlayhead(null)
+      sceneRef.current?.setFrame(null)
     }
-  }, [playhead])
+  }, [frames])
   // Unchanged plates keep their objects; the scene renders only when something changed.
   useEffect(() => {
     sceneRef.current?.setPlates(plates)
@@ -222,6 +212,9 @@ export function BedViewer({
   useEffect(() => {
     sceneRef.current?.setZoom(zoom)
   }, [zoom, resetKey])
+  useEffect(() => {
+    sceneRef.current?.setStyle(style)
+  }, [style])
 
   return (
     <div

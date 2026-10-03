@@ -1,4 +1,5 @@
 import type { GCodeFirmware, Point3 } from "@/domain/nc/gcode"
+import type { MotionModel } from "@/domain/motion/limits"
 import type { StoredAnchorSetup } from "@/domain/anchors/stored-anchors"
 import type { Solid } from "@/domain/fixtures/solids"
 
@@ -20,6 +21,11 @@ export type FirmwareSetup = {
    * probing meets besides the stock and what carries it.
    */
   readonly solids: readonly Solid[]
+  /**
+   * Where the tool's tip is as the program starts, in the program's coordinates from the work
+   * origin: where the machine was at Run. Absent, the program starts at the work origin.
+   */
+  readonly start?: Point3
 }
 
 /**
@@ -36,4 +42,15 @@ export interface FirmwareModel {
   bedPosition: (setup: FirmwareSetup, machine: Point3) => Point3
   /** The machine position at which that tool's tip is at a point on the bed. */
   machinePosition: (setup: FirmwareSetup, bed: Point3) => Point3
+  /**
+   * Where the machine waits once homed, in machine coordinates: where a plate's plan starts
+   * until a Run plans it from where the machine is.
+   */
+  readonly home: Point3
+  /**
+   * How fast it moves and where it stops between moves, as its planner has it. Its defaults'
+   * seek and feed rates are those its preview moves at where a program sets none
+   * (`GCodeFirmware.rates`), which a plan scales to the machine's own.
+   */
+  readonly motion: MotionModel
 }

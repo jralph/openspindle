@@ -1,5 +1,10 @@
 import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
+import { bloom } from "three/addons/tsl/display/BloomNode.js"
+import { max as largest, mrt, output, pass, vec4 } from "three/tsl"
+import { BlendMode, RenderPipeline } from "three/webgpu"
+import type { PassNode } from "three/webgpu"
+import type { PlaybackFrame } from "@/app/job/frame"
 import { kitForSetup } from "@/domain/fixtures/catalog"
 import { pictureFov } from "@/domain/fixtures/fixture-kit"
 import type { MachineCamera } from "@/domain/fixtures/fixture-kit"
@@ -18,14 +23,17 @@ import {
   problemMarkerId,
 } from "../bed-viewer-layout"
 import type { LineRange, PlatePlacement } from "../bed-viewer-layout"
-import type { Playhead } from "@/domain/nc/move-times"
 import { viewerPalette } from "./palette"
 import { reconcilePlates } from "./plate-identity"
 import { PlateView, bedGrid } from "./plate-view"
 import type { PlatePresentation, PlateViewContext } from "./plate-view"
 import { CLICK_TOLERANCE, SetupArranger } from "./setup-arranger"
 import type { ArrangeEvents, ArrangeLabel, ArrangeView } from "./setup-arranger"
-import { along } from "./toolpath-view"
+import { millimetresPerPixel } from "./screen-scale"
+import { SolidStyle, edgeWidth } from "./solid-style"
+import { studioEnvironment } from "./studio"
+import type { VisualStyle } from "./solid-style"
+import { GLOW } from "./touch-marker"
 import { ViewerAssets } from "./viewer-assets"
 import type { ModelMeshes } from "./viewer-assets"
 import { ViewerStage } from "./viewer-stage"
@@ -44,9 +52,6 @@ export type ViewerPresentation = {
   hiddenLineRanges?: Readonly<Record<string, readonly LineRange[]>>
   /** Fixtures each plate leaves out of the view (their ids), by plate id. */
   hiddenFixtures?: Readonly<Record<string, readonly string[]>>
-  previewLine?: number | null
-  previewProbePoint?: number | null
-  progress: number
   showRapids: boolean
   showStock: boolean
   /** Problems to mark where they are on their plates' beds, and the one shown. */
@@ -91,6 +96,35 @@ const VIEW_DIRECTIONS: Record<Exclude<ViewMode, "camera">, Point3> = {
   front: [0, -650, 110],
 }
 
+/** How much the glow blooms and how far, in BloomNode's terms. */
+const BLOOM = { strength: 1.6, radius: 0.35 } as const
+
+/**
+ * The scene as `scenePass` draws it, with what glows (`GLOW`, only the materials that write it)
+ * bloomed over it, as three.js's emissive bloom does. The bloom adds light: it raises the
+ * canvas's alpha only as much as it adds, so the page shows through where nothing is drawn.
+ */
+function glowingPipeline(
+  renderer: ConstructorParameters<typeof RenderPipeline>[0],
+  scenePass: PassNode
+) {
+  const outputs = mrt({ output, [GLOW]: vec4(0) })
+  outputs.setBlendMode(GLOW, new BlendMode(THREE.NormalBlending))
+  scenePass.setMRT(outputs)
+  const color = scenePass.getTextureNode("output")
+  const glow = bloom(
+    scenePass.getTextureNode(GLOW),
+    BLOOM.strength,
+    BLOOM.radius
+  )
+  const pipeline = new RenderPipeline(renderer)
+  pipeline.outputNode = vec4(
+    color.rgb.add(glow.rgb),
+    largest(color.a, glow.r, glow.g, glow.b).min(1)
+  )
+  return pipeline
+}
+
 /**
  * The Three.js side of the bed viewer. Frames render on demand: after control
  * input (until damping settles), resizes, state changes and asset loads.
@@ -105,6 +139,16 @@ export class BedScene {
   private arrangeLabel: ArrangeLabel | null = null
   private readonly events: BedSceneEvents
   private readonly stage: ViewerStage
+  /** The scene through the eye, its glow bloomed over it (`renderPipeline`). */
+  private readonly scenePass: PassNode
+  private readonly pipeline: RenderPipeline
+  /** How the solids are drawn: smoothly shaded, or with their edges too. */
+  private readonly solids: SolidStyle
+  /** Where the view looks, which the solids' edges are measured at. */
+  private readonly focus = new THREE.Object3D()
+  private style: VisualStyle = "smooth"
+  /** The studio Shaded Edges lights the solids from too, made once it is first shown. */
+  private studio: THREE.Texture | null = null
   private readonly camera = new THREE.OrthographicCamera(
     -190,
     190,
@@ -134,10 +178,10 @@ export class BedScene {
   private readonly views = new Map<string, PlateView>()
   private plates: readonly ViewerPlate[] = []
   private layout = layoutPlates([], this.emptyBed)
-  private playhead: Playhead | null = null
+  /** The frame of playback the selected plate is drawn at; null for its whole program. */
+  private playback: PlaybackFrame | null = null
   private presentation: ViewerPresentation = {
     selectedPlateId: null,
-    progress: 100,
     showRapids: false,
     showStock: true,
   }
@@ -153,7 +197,7 @@ export class BedScene {
   private hoverAnchorFrame = 0
   private hoverAnchorEvent: PointerEvent | null = null
 
-  /** Returns null when WebGL is unavailable. */
+  /** Reports `events.error` when neither WebGPU nor WebGL 2 is available. */
   static create(
     container: HTMLElement,
     labels: ReadonlyMap<string, HTMLElement>,
@@ -162,15 +206,8 @@ export class BedScene {
     events: BedSceneEvents,
     meshes: ModelMeshes
   ) {
-    let renderer: THREE.WebGLRenderer
-    try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    } catch {
-      return null
-    }
     return new BedScene(
       container,
-      renderer,
       labels,
       problemMarkers,
       arrangeLabel,
@@ -181,7 +218,6 @@ export class BedScene {
 
   private constructor(
     container: HTMLElement,
-    renderer: THREE.WebGLRenderer,
     labels: ReadonlyMap<string, HTMLElement>,
     problemMarkers: ReadonlyMap<string, HTMLElement>,
     arrangeLabel: { readonly current: HTMLElement | null },
@@ -204,7 +240,8 @@ export class BedScene {
     this.camera.position
       .copy(bedCenter)
       .add(new THREE.Vector3(...VIEW_DIRECTIONS.perspective))
-    this.stage = new ViewerStage(container, renderer, this.frame, {
+    this.stage = new ViewerStage(container, this.frame, {
+      unavailable: () => events.error("3D view unavailable."),
       resize: (width, height) => {
         // Resizing a settings panel must preserve the current focus and view scale.
         const halfHeight = (this.camera.top - this.camera.bottom) / 2
@@ -218,6 +255,11 @@ export class BedScene {
         this.placeLens()
       },
     })
+    const { renderer } = this.stage
+    this.scenePass = pass(this.stage.scene, this.camera)
+    this.pipeline = glowingPipeline(renderer, this.scenePass)
+    this.solids = new SolidStyle()
+    this.stage.scene.add(this.solids.group)
     this.controls = new OrbitControls(this.camera, renderer.domElement)
     this.controls.target.copy(bedCenter)
     // Damping stays off; if enabled, frames continue until the controls settle.
@@ -327,11 +369,11 @@ export class BedScene {
   }
 
   /**
-   * Where simulated playback is along the selected plate's moves: it moves every frame, and only
-   * that plate's path follows.
+   * The frame of playback the selected plate is drawn at, which changes every frame while a plan
+   * plays or a job is followed: only that plate's path follows. Null shows its whole program.
    */
-  setPlayhead(playhead: Playhead | null) {
-    this.playhead = playhead
+  setFrame(frame: PlaybackFrame | null) {
+    this.playback = frame
     this.present(this.presentation)
   }
 
@@ -347,6 +389,13 @@ export class BedScene {
       this.arranger?.platesChanged()
     if (changed) this.stage.invalidate()
     this.placeLens()
+  }
+
+  /** Draws the solids in `style` from the next frame. */
+  setStyle(style: VisualStyle) {
+    this.style = style
+    this.solids.set(style)
+    this.stage.invalidate()
   }
 
   /** A preset, or the view through the first plate's machine's camera, else the perspective. */
@@ -372,9 +421,9 @@ export class BedScene {
 
   /**
    * Puts the lens where the machine's camera is. Fixed to the frame, the camera sees the bed move
-   * along Y under the spindle, so it is level with the tool: where the playhead has it on the
-   * selected plate, else where the machine reports it, else where it last was (at first, over
-   * the middle of the plates' beds).
+   * along Y under the spindle, so it is level with the tool: where the frame of playback has it
+   * on the selected plate, else where the machine reports it, else where it last was (at first,
+   * over the middle of the plates' beds).
    */
   private placeLens() {
     const camera = this.machineCamera
@@ -395,15 +444,16 @@ export class BedScene {
     this.stage.invalidate()
   }
 
-  /** Where the tool is along a plate's bed's Y: at the playhead, else where the machine reports it. */
+  /**
+   * Where the tool is along a plate's bed's Y: where the frame of playback has its tip, else where
+   * the machine reports it.
+   */
   private toolY(plateId: string | null): number | null {
     const plate = this.plates.find(({ id }) => id === plateId)
     if (!plate) return null
-    const { playhead } = this
-    const segment =
-      playhead && plate.machineProgram.segments.at(playhead.segment)
-    if (playhead && segment)
-      return along(segment, playhead.fraction)[1] + plate.workOrigin[1]
+    const frame = this.playback
+    if (frame?.index.plan.program === plate.machineProgram)
+      return frame.tip[1] + plate.workOrigin[1]
     const { liveTool } = this.presentation
     return liveTool?.plateId === plateId ? liveTool.position[1] : null
   }
@@ -456,7 +506,10 @@ export class BedScene {
     this.controls.dispose()
     for (const view of this.views.values()) view.dispose()
     this.views.clear()
+    this.solids.dispose()
+    this.studio?.dispose()
     this.assets.dispose()
+    this.pipeline.dispose()
     this.stage.dispose()
   }
 
@@ -496,21 +549,15 @@ export class BedScene {
         showStock,
         ranges: NO_RANGES,
         hidden,
-        progress: 100,
         ...marked,
       }
-    const { progress, previewLine, previewProbePoint } = this.presentation
-    const { playhead } = this
     return {
       active: true,
       showRapids,
       showStock,
       ranges: selectedLineRanges ?? NO_RANGES,
       hidden,
-      progress,
-      previewLine,
-      previewProbePoint,
-      playhead,
+      frame: this.playback,
       ...marked,
     }
   }
@@ -529,7 +576,20 @@ export class BedScene {
 
   private readonly frame = () => {
     const settling = this.controls.update()
-    this.stage.renderer.render(this.stage.scene, this.eye)
+    this.scenePass.camera = this.eye
+    // Edges as wide on the solids where the view looks, within what reads on screen.
+    this.focus.position.copy(this.controls.target)
+    this.solids.lineWidth = edgeWidth(
+      millimetresPerPixel(this.stage.renderer, this.eye, this.focus)
+    )
+    this.solids.update(this.stage.scene, this.eye)
+    // Shaded Edges lights the solids from a studio, as a CAD model's shaded view is.
+    this.stage.useStudio(
+      this.style === "edges"
+        ? (this.studio ??= studioEnvironment(this.stage.renderer))
+        : null
+    )
+    this.pipeline.render()
     this.positionLabels()
     return settling
   }

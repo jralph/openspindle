@@ -1,12 +1,11 @@
-import { toViewerPlate } from "@/features/viewer/viewer-plate"
 import { useWorkspace } from "@/app/workspace/workspace-context"
-import type { ViewerToolRun } from "@/components/workspace/viewer/viewer-input"
 import { lineCut } from "@/domain/tools/cut-engagement"
 import type { LineCut, LineCutKind } from "@/domain/tools/cut-engagement"
 import type { Tool } from "@/domain/tools/tool"
 import { HeightMapFacts } from "@/components/workspace/height-map-grid"
 import type { JobSubject } from "./job-view"
 import type { CutPrediction } from "./use-cut-prediction"
+import type { CursorTool } from "./use-job-timeline"
 
 const millimetres = (value: number) => `${value.toFixed(3)} mm`
 
@@ -19,34 +18,26 @@ const NOT_CUTTING: Record<Exclude<LineCutKind, "cut">, string> = {
   unknown: "Tool shape unknown",
 }
 
-/** The run of the tool in the spindle at `line`; runs are in program order. */
-function runOnLine(runs: readonly ViewerToolRun[], line: number) {
-  let low = 0
-  let high = runs.length
-  while (low < high) {
-    const middle = (low + high) >>> 1
-    if (runs[middle].lineEnd < line) low = middle + 1
-    else high = middle
-  }
-  const run = runs.at(low)
-  return run && run.lineStart <= line ? run : undefined
-}
-
-/** "T2 · name" for the tool in the spindle at `line`, as the plate's tool table names it. */
+/**
+ * "T2 · name" for the tool in the spindle, as the plate's tool table names it: the tool the 3D
+ * view draws at the timeline's cursor.
+ */
 function toolText(
   subject: JobSubject,
   tools: readonly Tool[],
-  runs: readonly ViewerToolRun[],
-  line: number
+  tool: CursorTool | null
 ): string {
-  const run = line > 0 ? runOnLine(runs, line) : undefined
-  if (!run) return "—"
+  if (!tool) return "—"
+  const { number } = tool
   const toolId = subject.plate.tools.find(
-    (entry) => entry.number === run.tool
+    (entry) => entry.number === number
   )?.toolId
-  const name = tools.find((tool) => tool.id === toolId)?.name
-  const number = run.tool === null ? null : `T${run.tool}`
-  return [number, name].filter((part) => !!part).join(" · ") || "—"
+  const name = tools.find((item) => item.id === toolId)?.name
+  return (
+    [number === null ? null : `T${number}`, name]
+      .filter((part) => !!part)
+      .join(" · ") || "—"
+  )
 }
 
 /** The facts' values for a line, or what stands in for them before they are known. */
@@ -76,19 +67,19 @@ export function CutFacts({
   subject,
   prediction,
   line,
+  tool: shown,
 }: {
   subject: JobSubject | null
   prediction: CutPrediction | null
   /** The line on show; 0 while the whole program shows. */
   line: number
+  /** The tool in the spindle at the timeline's cursor; null while none shows. */
+  tool: CursorTool | null
 }) {
   const library = useWorkspace((state) => state.tools)
   const tools = subject?.tools ?? library
-  const runs = subject
-    ? toViewerPlate(subject.plate, subject.compiled, tools).tools
-    : []
   const values = cutValues(prediction, line)
-  const tool = subject ? toolText(subject, tools, runs, line) : "—"
+  const tool = subject ? toolText(subject, tools, shown) : "—"
   return (
     <HeightMapFacts
       facts={[

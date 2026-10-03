@@ -16,13 +16,15 @@ export const DEFAULT_SIMULATOR_OPTIONS: SimulatorOptions = {
   homed: true,
   tool: 1,
   anchors: [-192.4, -194.3, 88.5, 45],
-  lineMs: 40,
+  lineMs: 2,
   speed: 1,
   noDoneSnapshot: false,
   failAtLine: null,
   dropAcks: null,
   otherFile: false,
+  estop: false,
   transfer: { md5Challenge: false, placeholderMd5: false, corrupt: false },
+  truth: null,
 }
 
 export type SimulatorServer = {

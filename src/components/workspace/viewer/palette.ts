@@ -11,6 +11,10 @@ export type ViewerPalette = {
   probePath: THREE.Color
   /** Where a touch-off touches: red in any theme. */
   touchOff: THREE.Color
+  /** Where the probe touches next: magenta in any theme, apart from the touch-offs' red. */
+  nextTouch: THREE.Color
+  /** Where the tool goes next, while it follows the moves: red in any theme. */
+  pathAhead: THREE.Color
   /** The outline of where a plate cuts. */
   workArea: THREE.Color
   /** Where problems are: errors in the theme's warning colour, as alerts show them; warnings amber. */
@@ -18,7 +22,11 @@ export type ViewerPalette = {
 }
 
 /** A theme colour token, such as `--primary`, in the sRGB Three.js accepts. */
-function themeColor(element: HTMLElement, token: string, fallback: string) {
+export function themeColor(
+  element: HTMLElement,
+  token: string,
+  fallback: string
+) {
   // Canvas resolves CSS Color 4 / oklch theme tokens into sRGB.
   const probe = document.createElement("span")
   probe.style.color = `var(${token}, ${fallback})`
@@ -48,6 +56,8 @@ export function viewerPalette(element: HTMLElement): ViewerPalette {
     probe: new THREE.Color(0xfacc15),
     probePath: new THREE.Color(0x22c55e),
     touchOff: new THREE.Color(0xef4444),
+    nextTouch: new THREE.Color(0xd946ef),
+    pathAhead: new THREE.Color(0xef4444),
     workArea: primary.clone().lerp(new THREE.Color(0xe39a2d), 0.7),
     problem: {
       error: themeColor(element, "--warning", "#c2410c"),

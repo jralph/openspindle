@@ -6,7 +6,6 @@ import {
   useSelectedPlate,
   useWorkspace,
 } from "@/app/workspace/workspace-context"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   Empty,
   EmptyDescription,
@@ -21,8 +20,8 @@ import {
 } from "@/components/ui/resizable"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { DeviceCard } from "@/features/prepare/sidebar-header"
+import { MachineDiagnosis } from "@/features/device/machine-diagnosis"
 import { MachineConsole } from "./machine-console"
-import { useMachineSnapshot } from "@/platform/machine"
 import { CutFacts } from "./cut-facts"
 import { GCodeListing } from "./gcode-listing"
 import { JobCamera } from "./job-camera"
@@ -55,7 +54,6 @@ function JobPanel({
   subject: JobSubject | null
   check: ProgramCheck
 }) {
-  const { lockout } = useMachineSnapshot()
   const actions = useJobActions()
   const runJob = useRunJob()
   const library = useWorkspace((state) => state.tools)
@@ -84,11 +82,7 @@ function JobPanel({
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-3 p-3">
           <JobSummary view={view} subject={subject} />
-          {lockout && (
-            <Alert variant="destructive">
-              <AlertDescription>{lockout.reason}</AlertDescription>
-            </Alert>
-          )}
+          <MachineDiagnosis />
           <RunStageList
             view={view}
             subject={subject}
@@ -222,11 +216,7 @@ export function JobPage({
           className="relative flex h-full min-h-0 min-w-0 flex-col"
           aria-label="Job preview"
         >
-          <JobViewer
-            shown={subject}
-            preview={timeline.preview}
-            playhead={timeline.playhead}
-          />
+          <JobViewer shown={subject} frames={timeline.frames} />
           <JobTimelineBar
             timeline={timeline}
             details={
@@ -234,12 +224,13 @@ export function JobPage({
                 subject={subject}
                 prediction={prediction}
                 line={timeline.line}
+                tool={timeline.tool}
               />
             }
           />
           <JobCamera
             shown={subject}
-            playhead={timeline.live ? timeline.playhead : undefined}
+            frames={timeline.live ? timeline.frames : undefined}
           />
         </main>
       </ResizablePanel>
