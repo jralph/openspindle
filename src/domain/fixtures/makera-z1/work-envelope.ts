@@ -11,3 +11,6 @@ export function z1WorkBounds(anchor: readonly [number, number]) {
     max: [min[0] + Z1_WORK_AREA[0], min[1] + Z1_WORK_AREA[1]] as const,
   }
 }
+
+/** Firmware Z soft limits, shared with probing and the controller simulator. */
+export const MACHINE_Z = { min: -102, max: -1 } as const

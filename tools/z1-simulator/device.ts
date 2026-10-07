@@ -4,7 +4,10 @@ import {
 } from "../../src/domain/fixtures/makera-z1/motion.ts"
 import { SETTER_RADIUS } from "../../src/domain/fixtures/makera-z1/tool-setter.ts"
 import type { MachineLimits } from "../../src/domain/motion/limits.ts"
-import { z1WorkBounds } from "../../src/domain/fixtures/makera-z1/work-envelope.ts"
+import {
+  z1WorkBounds,
+  MACHINE_Z,
+} from "../../src/domain/fixtures/makera-z1/work-envelope.ts"
 import {
   DIRECT_INPUT_TTL_MS,
   DIRECT_SAMPLE_MS,
@@ -12,6 +15,7 @@ import {
 } from "../../src/machine/contract/simulator-jog.ts"
 import {
   readSimulatorJogCommand,
+  SIMULATOR_SPINDLE_LIMITS,
   simulatorJogReplyLine,
 } from "../../src/machine/firmware/makera/simulator-jog.ts"
 import { DirectMotion } from "./direct-motion.ts"
@@ -185,6 +189,9 @@ export class SimulatedZ1 {
     id: string
     connectionId: string | null
     sequence: number
+    actionSequence: number
+    mode: "step" | "direct"
+    suppressed: boolean
     deadline: number
     ending: boolean
     motion: DirectMotion
@@ -351,6 +358,7 @@ export class SimulatedZ1 {
   disconnectDirect() {
     if (!this.direct) return
     this.mpos.splice(0, 3, ...this.direct.motion.halt(Date.now()))
+    this.machineCode("M5")
     this.retireDirect(this.direct.id)
     this.direct = null
     this.directFeed = 0
@@ -372,6 +380,7 @@ export class SimulatedZ1 {
     this.directMoving = result.moving
     if (!direct.ending && (result.expired || now >= direct.deadline)) {
       direct.ending = true
+      this.machineCode("M5")
       this.retireDirect(direct.id)
       direct.motion.zero(now)
       this.log(`Direct simulator input expired: ${direct.id}`)
@@ -397,14 +406,21 @@ export class SimulatedZ1 {
     }
     const now = Date.now()
     this.advanceDirect(now)
+    const input = command.kind === "sample" ? command.sample : null
+    const action = command.kind === "action" ? command.input : null
     const id =
-      command.kind === "sample" ? command.sample.sessionId : command.sessionId
-    const sequence = command.kind === "sample" ? command.sample.sequence : 0
+      input?.sessionId ??
+      action?.sessionId ??
+      (command.kind === "begin" || command.kind === "end"
+        ? command.sessionId
+        : "")
+    const sequence = input?.sequence ?? action?.sequence ?? 0
     const reply = (reason: string | null = null) =>
       this.lines(
         simulatorJogReplyLine({
           sessionId: id,
           sequence,
+          kind: command.kind,
           ok: reason === null,
           reason,
         })
@@ -414,34 +430,50 @@ export class SimulatedZ1 {
         this.direct ||
         this.state(now) !== "Idle" ||
         this.spindleOn ||
+        this.estop ||
         this.retiredDirect.has(id)
       )
-        return reply("Simulator is unavailable for Direct arming")
-      const bounds = z1WorkBounds(this.anchor1)
+        return reply("Simulator is unavailable for controller arming")
+      const xy = z1WorkBounds(this.anchor1)
+      const bounds = {
+        min: [xy.min[0], xy.min[1], MACHINE_Z.min] as Xyz,
+        max: [xy.max[0], xy.max[1], MACHINE_Z.max] as Xyz,
+      }
       if (
-        [0, 1].some(
+        [0, 1, 2].some(
           (axis) =>
             this.mpos[axis] < bounds.min[axis] ||
             this.mpos[axis] > bounds.max[axis]
         )
       )
-        return reply("Jog into the simulator work area before arming Direct")
+        return reply("Jog into the simulator XYZ travel envelope before arming")
       this.direct = {
         id,
         connectionId: null,
         sequence: 0,
+        actionSequence: 0,
+        mode: command.mode,
+        suppressed: false,
         deadline: now + DIRECT_INPUT_TTL_MS,
         ending: false,
         motion: new DirectMotion(
           [...this.mpos],
-          [this.limits.axisRate[0], this.limits.axisRate[1]],
-          this.limits.acceleration,
+          this.limits.axisRate,
+          Math.min(
+            this.limits.acceleration,
+            ...this.limits.axisAcceleration.map(
+              (value) => value ?? this.limits.acceleration
+            )
+          ),
           bounds,
           now
         ),
       }
-      this.log(`Direct simulator started: ${id}`)
-      return reply()
+      this.log(`Controller simulator started: ${id} ${command.mode}`)
+      reply()
+      this.diagnose()
+      this.reportStatus()
+      return
     }
     const direct = this.direct
     if (command.kind === "end") {
@@ -449,32 +481,86 @@ export class SimulatedZ1 {
         direct.ending = true
         this.retireDirect(id)
         direct.motion.zero(now)
+        this.machineCode("M5")
       }
       reply()
       this.advanceDirect(now)
+      this.diagnose()
+      this.reportStatus()
       return
     }
-    const sample = command.sample
     if (!direct || direct.id !== id || direct.ending)
-      return reply("Direct session has ended")
+      return reply("Controller session has ended")
+    const captured = input ?? action!
     if (
-      sample.sequence <= direct.sequence ||
-      sample.capturedAt > now + DIRECT_CLOCK_SKEW_MS ||
-      now >= sample.capturedAt + DIRECT_INPUT_TTL_MS ||
+      captured.capturedAt > now + DIRECT_CLOCK_SKEW_MS ||
+      now >= captured.capturedAt + DIRECT_INPUT_TTL_MS ||
       (direct.connectionId !== null &&
-        direct.connectionId !== sample.connectionId)
+        direct.connectionId !== captured.connectionId)
     )
-      return reply("Stale or mismatched Direct input")
-    direct.connectionId = sample.connectionId
-    direct.sequence = sample.sequence
-    direct.deadline = Math.min(sample.capturedAt, now) + DIRECT_INPUT_TTL_MS
-    direct.motion.target(
-      [sample.x, sample.y],
-      sample.speedScale,
-      direct.deadline,
-      now
+      return reply("Stale or mismatched controller input")
+    if (input) {
+      if (input.sequence <= direct.sequence)
+        return reply("Controller input sequence did not advance")
+      direct.connectionId = input.connectionId
+      direct.sequence = input.sequence
+      direct.deadline = Math.min(input.capturedAt, now) + DIRECT_INPUT_TTL_MS
+      direct.suppressed = input.suppress
+      if (input.suppress) direct.motion.zero(now)
+      else if (direct.mode === "direct")
+        direct.motion.target(
+          [input.x, input.y, input.z],
+          input.speedScale,
+          direct.deadline,
+          now
+        )
+      else direct.motion.heartbeat(direct.deadline)
+      reply()
+      return
+    }
+    if (!action || action.sequence <= direct.actionSequence)
+      return reply("Controller action sequence did not advance")
+    // Consume a refused action too: it must never become a delayed successful retry.
+    direct.actionSequence = action.sequence
+    const requested = action.action
+    if (this.estop || this.halted || this.directMoving)
+      return reply("Stop controller motion before this action")
+    if (requested.kind === "step") {
+      if (direct.mode !== "step" || direct.suppressed)
+        return reply("Step is unavailable in this controller state")
+      const axis = ({ X: 0, Y: 1, Z: 2 } as const)[requested.axis]
+      const refusal = direct.motion.step(
+        axis,
+        requested.distance,
+        requested.speedScale,
+        now
+      )
+      if (refusal) return reply(refusal)
+      this.directMoving = true
+    } else {
+      if (!direct.suppressed)
+        return reply(
+          "Hold X and stop controller motion before spindle controls"
+        )
+      if (
+        requested.kind !== "stop" &&
+        (requested.rpm < SIMULATOR_SPINDLE_LIMITS.min ||
+          requested.rpm > SIMULATOR_SPINDLE_LIMITS.max)
+      )
+        return reply("RPM is outside the simulator control range")
+      if (requested.kind === "start") {
+        if (this.tool < 1 || this.tool >= 1000)
+          return reply("Select a cutting tool before spindle start")
+        this.machineCode(`M3 S${requested.rpm}`)
+      } else if (requested.kind === "stop") this.machineCode("M5")
+      else this.targetRpm = requested.rpm
+    }
+    this.log(
+      `Controller simulator action: ${id} ${action.sequence} ${JSON.stringify(requested)}`
     )
     reply()
+    this.diagnose()
+    this.reportStatus()
   }
 
   /** Runs `done` later, unless a halt or a reboot comes first. */

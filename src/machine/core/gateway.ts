@@ -99,6 +99,10 @@ export class MachineGateway {
     this.requireApp()
     return this.controller.sampleSimulatedJog(input)
   }
+  actionSimulatedJog(input: unknown) {
+    this.requireApp()
+    return this.controller.actionSimulatedJog(input)
+  }
   endSimulatedJog(input: unknown) {
     this.requireApp()
     return this.controller.endSimulatedJog(input)

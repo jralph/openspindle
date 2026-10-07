@@ -2,18 +2,29 @@ import { z } from "zod"
 import {
   SimulatedJogSampleSchema,
   SimulatedJogReceiptSchema,
+  SimulatedJogActionSchema,
 } from "../../contract/simulator-jog.ts"
 import type { SimulatedJogSample } from "../../contract/simulator-jog.ts"
 import type { OutboundFrame } from "../adapter.ts"
 import { FRAME_TYPES } from "./codec.ts"
 
+export const SIMULATOR_SPINDLE_LIMITS = { min: 1000, max: 10000 } as const
+
 const CommandSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("begin"), sessionId: z.string().uuid() }),
+  z.strictObject({
+    kind: z.literal("begin"),
+    sessionId: z.string().uuid(),
+    mode: z.enum(["step", "direct"]),
+  }),
   z.strictObject({
     kind: z.literal("sample"),
     sample: SimulatedJogSampleSchema,
   }),
   z.strictObject({ kind: z.literal("end"), sessionId: z.string().uuid() }),
+  z.strictObject({
+    kind: z.literal("action"),
+    input: SimulatedJogActionSchema,
+  }),
 ])
 export type SimulatorJogWireCommand = z.infer<typeof CommandSchema>
 const ReplySchema = SimulatedJogReceiptSchema.extend({

@@ -14,6 +14,8 @@ export function createMachineHandlers(
         machine(() => gateway.beginSimulatedJog(input)),
       "machine.sampleSimulatedJog": (input) =>
         machine(() => gateway.sampleSimulatedJog(input)),
+      "machine.actionSimulatedJog": (input) =>
+        machine(() => gateway.actionSimulatedJog(input)),
       "machine.endSimulatedJog": (input) =>
         machine(() => gateway.endSimulatedJog(input)),
       "machine.snapshot": () => machine(() => gateway.snapshot()),

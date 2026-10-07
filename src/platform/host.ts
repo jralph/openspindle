@@ -18,6 +18,7 @@ import type {
   SimulatedJogSession,
   SimulatedJogSample,
   SimulatedJogReceipt,
+  SimulatedJogAction,
   WriteAnchorsRequest,
   WriteAnchorsResult,
 } from "@/machine/contract"
@@ -57,6 +58,9 @@ export interface MachineHost {
   ) => Promise<SimulatedJogSession>
   sampleSimulatedJog: (
     input: SimulatedJogSample
+  ) => Promise<SimulatedJogReceipt>
+  actionSimulatedJog: (
+    input: SimulatedJogAction
   ) => Promise<SimulatedJogReceipt>
   endSimulatedJog: (input: SimulatedJogSession) => Promise<MachineSnapshot>
   snapshot: () => Promise<MachineSnapshot>

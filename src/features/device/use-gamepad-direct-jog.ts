@@ -1,8 +1,11 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react"
 import { DIRECT_INPUT_TTL_MS, DIRECT_SAMPLE_MS } from "@/machine/contract"
-import type { SimulatedJogSession } from "@/machine/contract"
+import type {
+  SimulatedJogSession,
+  SimulatedJogAction,
+} from "@/machine/contract"
 import type { MachineHost } from "@/platform/host"
-import { useMachineSnapshot } from "@/platform/machine"
+import { machineErrorCode, useMachineSnapshot } from "@/platform/machine"
 import { log } from "@/app/errors/log"
 import type { ControllerInput } from "./gamepad-step-input"
 import { DirectGesture } from "./gamepad-direct-input"
@@ -11,10 +14,14 @@ type Active = {
   token: SimulatedJogSession
   machine: MachineHost
   sequence: number
+  actionSequence: number
+  actionPending: boolean
+  actionKind: SimulatedJogAction["action"]["kind"] | null
   inFlight: boolean
   sentAt: number
   pending: {
-    vector: readonly [number, number]
+    vector: readonly [number, number, number]
+    input: ControllerInput
     capturedAt: number
     speedScale: number
   } | null
@@ -27,6 +34,8 @@ export function useGamepadDirectJog(options: {
   machine: MachineHost
   connectionId: string | null
   speed: number
+  mode: "step" | "direct"
+  onNotice: (message: string) => void
   onFailure: (reason: string) => void
 }) {
   const record = useRef<Active | null>(null)
@@ -43,7 +52,7 @@ export function useGamepadDirectJog(options: {
       current.zeroAt !== null &&
       telemetry &&
       telemetry.receivedAt >= current.zeroAt &&
-      telemetry.state === "Idle" &&
+      ["Idle", "Run"].includes(telemetry.state) &&
       telemetry.feed === 0
     ) {
       log.info("Direct simulator zero confirmed", {
@@ -53,6 +62,7 @@ export function useGamepadDirectJog(options: {
       current.zeroAt = null
     }
   }, [snapshot.telemetry])
+  const notice = useEffectEvent((message: string) => options.onNotice(message))
   const fail = useEffectEvent((reason: string) => options.onFailure(reason))
   const end = (reason: string, halt = false) => {
     generation.current++
@@ -92,6 +102,7 @@ export function useGamepadDirectJog(options: {
     try {
       const token = await machine.beginSimulatedJog({
         connectionId: options.connectionId,
+        mode: options.mode,
       })
       if (generation.current !== epoch) {
         await machine.endSimulatedJog(token)
@@ -101,6 +112,9 @@ export function useGamepadDirectJog(options: {
         token,
         machine,
         sequence: 0,
+        actionSequence: 0,
+        actionPending: false,
+        actionKind: null,
         inFlight: false,
         sentAt: 0,
         pending: null,
@@ -110,7 +124,10 @@ export function useGamepadDirectJog(options: {
         zeroAt: null,
       }
       setActive(true)
-      log.info("Direct simulator armed", { sessionId: token.sessionId })
+      log.info("Controller simulator armed", {
+        sessionId: token.sessionId,
+        mode: options.mode,
+      })
       return true
     } catch (error) {
       if (generation.current === epoch)
@@ -153,6 +170,13 @@ export function useGamepadDirectJog(options: {
       capturedAt: sample.capturedAt,
       x: sample.vector[0],
       y: sample.vector[1],
+      z: sample.vector[2],
+      suppress:
+        sample.input.stepModifierHeld || sample.input.spindleModifierHeld,
+      spindleModifier:
+        sample.input.spindleModifierHeld && !sample.input.stepModifierHeld,
+      neutral: sample.input.neutral,
+      enableHeld: sample.input.enableHeld,
       speedScale: sample.speedScale,
     }
     void current.machine
@@ -165,11 +189,12 @@ export function useGamepadDirectJog(options: {
             ageMs: Date.now() - sample.capturedAt,
             x: input.x,
             y: input.y,
+            z: input.z,
           })
         }
       })
       .catch((error: Error) => {
-        if (record.current === current) {
+        if (record.current === current && machineErrorCode(error) !== "busy") {
           end(error.message)
           fail(error.message)
         }
@@ -182,21 +207,84 @@ export function useGamepadDirectJog(options: {
   const sample = (input: ControllerInput, capturedAt: number) => {
     const current = record.current
     if (!current) return
-    const vector = current.gesture.take(input)
-    current.pending = { vector, capturedAt, speedScale: options.speed / 100 }
-    const zero = vector[0] === 0 && vector[1] === 0
+    const spindlePending =
+      current.actionPending && current.actionKind !== "step"
+    if (spindlePending) input = { ...input, spindleModifierHeld: true }
+    const vector =
+      options.mode === "direct"
+        ? current.gesture.take(input)
+        : ([0, 0, 0] as const)
+    current.pending = {
+      vector,
+      input,
+      capturedAt,
+      speedScale: options.speed / 100,
+    }
+    const zero = Math.hypot(...vector) === 0
     if (
       (zero && current.moving) ||
       capturedAt - current.sentAt >= DIRECT_SAMPLE_MS
     )
       flush(current)
   }
+  const action = (
+    requested: SimulatedJogAction["action"],
+    capturedAt: number
+  ) => {
+    const current = record.current
+    if (!current) return
+    if (current.inFlight || current.actionPending) {
+      notice("Controller action busy — press again after it finishes")
+      return
+    }
+    current.actionPending = true
+    current.actionKind = requested.kind
+    // Reserve only the short wire exchange locally; heartbeats continue during effect verification.
+    current.inFlight = true
+    const input = {
+      ...current.token,
+      sequence: ++current.actionSequence,
+      capturedAt,
+      action: requested,
+    }
+    log.info("Controller simulator action requested", input)
+    void current.machine
+      .actionSimulatedJog(input)
+      .then((receipt) => {
+        if (record.current !== current) return
+        log.info("Controller simulator action confirmed", {
+          receipt,
+          action: requested,
+        })
+        notice(`${requested.kind} confirmed`)
+      })
+      .catch((error: Error) => {
+        if (record.current !== current) return
+        const code = machineErrorCode(error)
+        log.warn("Controller simulator action failed", {
+          code,
+          reason: error.message,
+        })
+        if (code && ["busy", "refused", "rejected", "cancelled"].includes(code))
+          notice(error.message)
+        else {
+          end(error.message)
+          fail(error.message)
+        }
+      })
+      .finally(() => {
+        current.actionPending = false
+        current.actionKind = null
+      })
+    // The owner takes the wire lease synchronously; the next poll can try a fresh heartbeat.
+    current.inFlight = false
+  }
   const closeOnChange = useEffectEvent(() =>
     end("Connection or machine process changed")
   )
   useEffect(
     () => () => closeOnChange(),
-    [options.connectionId, options.machine]
+    [options.connectionId, options.machine, options.mode]
   )
-  return { pending, active, begin, sample, end }
+  return { pending, active, begin, sample, action, end }
 }

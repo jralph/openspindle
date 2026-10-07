@@ -12,6 +12,7 @@ import {
   SimulatedJogSessionSchema,
   SimulatedJogSampleSchema,
   SimulatedJogReceiptSchema,
+  SimulatedJogActionSchema,
   ConsoleEntrySchema,
   DisconnectRequestSchema,
   HeightMapSchema,
@@ -51,6 +52,11 @@ export const machineMethods = {
     params: SimulatedJogSampleSchema,
     result: SimulatedJogReceiptSchema,
     timeoutMs: 1000,
+  },
+  "machine.actionSimulatedJog": {
+    params: SimulatedJogActionSchema,
+    result: SimulatedJogReceiptSchema,
+    timeoutMs: 35_000,
   },
   "machine.endSimulatedJog": {
     params: SimulatedJogSessionSchema,

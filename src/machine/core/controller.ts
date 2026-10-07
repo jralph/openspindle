@@ -2,6 +2,7 @@ import { z } from "zod"
 import {
   BeginSimulatedJogRequestSchema,
   SimulatedJogSampleSchema,
+  SimulatedJogActionSchema,
   SimulatedJogSessionSchema,
 } from "../contract/simulator-jog.ts"
 import type {
@@ -489,7 +490,7 @@ export class MachineController {
       speedScale: 0.1,
     } as const
     this.admitNow({ key: "jog", command })
-    const activity = this.begin("command", "Direct simulator jogging")
+    const activity = this.begin("command", "Simulator controller")
     const context: OperationContext = {
       session,
       adapter: this.adapter,
@@ -508,11 +509,16 @@ export class MachineController {
       connectionId: request.connectionId,
       sessionId: crypto.randomUUID(),
     }
-    const owner = new SimulatedJogOwner(context, token, (reason) => {
-      this.trace.record("note", reason)
-      this.ports.log?.warn(reason)
-      void this.endSimulatedJog(token).catch(() => {})
-    })
+    const owner = new SimulatedJogOwner(
+      context,
+      token,
+      request.mode,
+      (reason) => {
+        this.trace.record("note", reason)
+        this.ports.log?.warn(reason)
+        void this.endSimulatedJog(token).catch(() => {})
+      }
+    )
     const direct = {
       owner,
       token,
@@ -551,7 +557,10 @@ export class MachineController {
         owner.invalidate()
         this.direct = null
         // Once begin might have reached the simulator, closing prevents a late start from owning it.
-        if (beginSent)
+        if (
+          beginSent &&
+          !(error instanceof MachineError && error.code === "rejected")
+        )
           session.close(message(error, "Direct simulator arming failed."))
         this.end(activity)
       }
@@ -581,7 +590,53 @@ export class MachineController {
         receivedAt,
         ageMs: receivedAt - sample.capturedAt,
       })
-      if (this.direct === direct && !direct.owner.ending)
+      if (
+        this.direct === direct &&
+        !direct.owner.ending &&
+        !(error instanceof MachineError && error.code === "busy")
+      )
+        this.failDirect(direct, error)
+      throw error
+    }
+  }
+
+  async actionSimulatedJog(input: unknown): Promise<SimulatedJogReceipt> {
+    const request = parse(SimulatedJogActionSchema, input)
+    const direct = this.direct
+    if (
+      !direct ||
+      request.sessionId !== direct.token.sessionId ||
+      request.connectionId !== direct.token.connectionId ||
+      direct.ending
+    )
+      throw new MachineError(
+        "refused",
+        "Controller session has ended. Arm again."
+      )
+    this.trace.record(
+      "note",
+      `Controller simulator action requested: ${JSON.stringify(request)}`
+    )
+    try {
+      const receipt = await direct.owner.action(request)
+      this.trace.record(
+        "note",
+        `Controller simulator action confirmed: ${JSON.stringify({ receipt, telemetry: direct.session.store.telemetry })}`
+      )
+      return receipt
+    } catch (error) {
+      this.ports.log?.warn("Controller simulator action failed", {
+        reason: message(error, "Action failed"),
+        sequence: request.sequence,
+      })
+      if (
+        this.direct === direct &&
+        !direct.owner.ending &&
+        !(
+          error instanceof MachineError &&
+          ["busy", "refused", "rejected", "cancelled"].includes(error.code)
+        )
+      )
         this.failDirect(direct, error)
       throw error
     }
@@ -1496,8 +1551,27 @@ export class MachineController {
     let status: MachineSnapshot["connection"]["status"] = "disconnected"
     if (ready) status = "connected"
     else if (session) status = "connecting"
+    const available = availability(context)
+    const arm =
+      ready?.device && isSimulator(ready.device)
+        ? available.jog
+        : {
+            allowed: false,
+            deferred: false,
+            reason: "Connect the local simulator first.",
+          }
+    const inactive = {
+      allowed: false,
+      deferred: false,
+      reason: "Arm simulator controller first.",
+    }
     return {
       revision,
+      simulatorController: {
+        arm,
+        step: this.direct?.owner.availability("step") ?? inactive,
+        spindle: this.direct?.owner.availability("spindle") ?? inactive,
+      },
       connection: {
         id: ready ? this.connectionId(ready) : null,
         status,
@@ -1515,7 +1589,7 @@ export class MachineController {
           }
         : null,
       telemetry,
-      availability: availability(context),
+      availability: available,
       activity: this.activity
         ? {
             kind: this.activity.kind,

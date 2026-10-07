@@ -1,4 +1,7 @@
-import { simulatorJogProtocol } from "./simulator-jog.ts"
+import {
+  simulatorJogProtocol,
+  SIMULATOR_SPINDLE_LIMITS,
+} from "./simulator-jog.ts"
 import {
   ADDED_ANCHOR_LIMIT,
   ASSIST_KEYS,
@@ -255,8 +258,8 @@ export const makeraAdapter: FirmwareAdapter = {
     jogMaxDistance: 10,
     jogMinSpeedScale: 0.01,
     jogMaxSpeedScale: 0.25,
-    spindleRpmMin: 1000,
-    spindleRpmMax: 10000,
+    spindleRpmMin: SIMULATOR_SPINDLE_LIMITS.min,
+    spindleRpmMax: SIMULATOR_SPINDLE_LIMITS.max,
     overrideMin: 50,
     overrideMax: 150,
   },

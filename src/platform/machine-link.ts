@@ -16,6 +16,8 @@ function machineOver(peer: Peer<MachineContract>): MachineHost {
     beginSimulatedJog: (input) => peer.call("machine.beginSimulatedJog", input),
     sampleSimulatedJog: (input) =>
       peer.call("machine.sampleSimulatedJog", input),
+    actionSimulatedJog: (input) =>
+      peer.call("machine.actionSimulatedJog", input),
     endSimulatedJog: (input) => peer.call("machine.endSimulatedJog", input),
     snapshot: () => peer.call("machine.snapshot", undefined),
     subscribe: (listener) =>
@@ -80,6 +82,7 @@ function unreachableMachine(error: string | null): MachineHost {
     simulateBed: refuse,
     beginSimulatedJog: refuse,
     sampleSimulatedJog: refuse,
+    actionSimulatedJog: refuse,
     endSimulatedJog: refuse,
     sendConsoleLine: refuse,
     stop: refuse,

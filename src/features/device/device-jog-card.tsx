@@ -41,17 +41,17 @@ const Z_BUTTONS = [
 /** Jog steps and speed, and the XY and Z jog pads. */
 export function DeviceJogCard({
   limits,
+  spindleRpm,
   reason,
   allowed,
   execute,
-  executeGamepad,
   stop,
 }: {
   limits: ControlLimits | null
+  spindleRpm: number
   reason: (key: AvailabilityKey, action?: MachineCommand) => string | null
   allowed: (action: MachineCommand) => boolean
   execute: (action: MachineCommand) => void
-  executeGamepad: (action: MachineCommand) => Promise<MachineSnapshot>
   stop: () => Promise<MachineSnapshot>
 }) {
   const fieldId = useId()
@@ -152,6 +152,7 @@ export function DeviceJogCard({
       <GamepadStepControls
         step={step}
         speed={speed}
+        spindleRpm={spindleRpm}
         adjustStep={(delta) =>
           setStep((current) => {
             const index = jogSteps.indexOf(current)
@@ -162,8 +163,6 @@ export function DeviceJogCard({
             )
           })
         }
-        allowed={allowed}
-        execute={executeGamepad}
         stop={stop}
       />
     </ControlCard>

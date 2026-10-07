@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/field"
 import { OptionSelect } from "@/components/option-select"
 import { isSimulator } from "@/machine/contract"
-import type { MachineCommand, MachineSnapshot } from "@/machine/contract"
+import type { MachineSnapshot } from "@/machine/contract"
 import { useMachineSnapshot } from "@/platform/machine"
 import { useGamepadStepJog } from "./use-gamepad-step-jog"
 
@@ -18,16 +18,14 @@ import { useGamepadStepJog } from "./use-gamepad-step-jog"
 export function GamepadStepControls({
   step,
   speed,
+  spindleRpm,
   adjustStep,
-  allowed,
-  execute,
   stop,
 }: {
   step: number
   speed: number
+  spindleRpm: number
   adjustStep: (delta: -1 | 1) => void
-  allowed: (action: MachineCommand) => boolean
-  execute: (action: MachineCommand) => Promise<MachineSnapshot>
   stop: () => Promise<MachineSnapshot>
 }) {
   const id = useId()
@@ -39,16 +37,15 @@ export function GamepadStepControls({
     simulator,
     step,
     speed,
+    spindleRpm,
     adjustStep,
-    allowed,
-    execute,
     stop,
   })
   const selected = input.selected
   const canArm =
     simulator &&
     selected?.supported === true &&
-    snapshot.availability.jog.allowed &&
+    snapshot.simulatorController.arm.allowed &&
     !input.pending
   const modeId = `${id}-mode`
   let status = "No controller detected — wake it with a button"
@@ -104,7 +101,7 @@ export function GamepadStepControls({
         <Button
           variant={input.armed ? "secondary" : "outline"}
           disabled={!input.armed && !canArm}
-          title={snapshot.availability.jog.reason ?? undefined}
+          title={snapshot.simulatorController.arm.reason ?? undefined}
           onClick={() => {
             if (input.armed) input.disarm()
             else void input.arm()
@@ -118,24 +115,30 @@ export function GamepadStepControls({
       </div>
       {input.mode === "step" && (
         <FieldDescription>
-          Hold LB, then move the left stick or press the D-pad for one XY step.
-          Return to centre before the next step. B halts the simulator and
-          disarms. Z stays locked.
+          Hold LB, then use the left stick or D-pad for one XY step, or
+          right-stick up/down for one Z step. Return to centre before the next
+          step. B halts the simulator and disarms.
         </FieldDescription>
       )}
       {input.mode === "step" && (
         <FieldDescription>
-          A sent step runs to its selected distance. Return to centre before
-          another step. Continuous steering is not enabled in Step mode.
+          A sent step runs to its selected distance on normal release. X/RB or
+          disarming interrupts it. Return to centre before another step.
+          Continuous steering is not enabled in Step mode.
         </FieldDescription>
       )}
       {input.mode === "direct" && (
         <FieldDescription>
           Hold LB to steer; release the stick or LB to stop. Jog speed is the
-          maximum speed. B halts and disarms. Z stays locked. Disarm to use
-          other machine controls.
+          maximum speed. Left stick steers XY; right-stick up/down steers Z. B
+          halts and disarms. Disarm to use other machine controls.
         </FieldDescription>
       )}
+      <FieldDescription>
+        Hold X and wait for motion to stop: D-pad up/down changes target RPM by
+        1,000; A starts, Y stops the spindle. Centre both sticks and release LB
+        before starting. Disarming stops motion and spindle.
+      </FieldDescription>
       {!simulator && (
         <FieldDescription>
           Connect the local Z1 simulator to enable jogging.

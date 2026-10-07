@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react"
-import type { MachineCommand, MachineSnapshot } from "@/machine/contract"
+import type { MachineSnapshot } from "@/machine/contract"
 import { useMachineHost, useMachineSnapshot } from "@/platform/machine"
 import { useGamepadDirectJog } from "./use-gamepad-direct-jog"
 import { log } from "@/app/errors/log"
@@ -11,9 +11,8 @@ type Options = {
   simulator: boolean
   step: number
   speed: number
+  spindleRpm: number
   adjustStep: (delta: -1 | 1) => void
-  allowed: (action: MachineCommand) => boolean
-  execute: (action: MachineCommand) => Promise<MachineSnapshot>
   stop: () => Promise<MachineSnapshot>
 }
 
@@ -28,8 +27,8 @@ export function useGamepadStepJog(options: Options) {
   const snapshot = useMachineSnapshot()
   const armedRef = useRef(false)
   const live = useRef<ControllerInput | null>(null)
-  const busy = useRef(false)
   const gesture = useRef(new StepGesture())
+  const actionHeld = useRef({ rpm: 0, start: false, stop: false })
   const stepButtonHeld = useRef(false)
   const disarm = (message = "Controller disarmed", halt = false) => {
     if (armedRef.current) log.info(`Gamepad: ${message}`)
@@ -43,6 +42,8 @@ export function useGamepadStepJog(options: Options) {
     machine,
     connectionId: options.connectionId,
     speed: options.speed,
+    mode,
+    onNotice: setNotice,
     onFailure: disarm,
   })
   const directSeen = useRef(false)
@@ -51,7 +52,7 @@ export function useGamepadStepJog(options: Options) {
       directSeen.current = false
       return
     }
-    if (snapshot.activity?.label === "Direct simulator jogging")
+    if (snapshot.activity?.label === "Simulator controller")
       directSeen.current = true
     else if (directSeen.current) disarm("Direct session ended — arm again")
   })
@@ -97,39 +98,61 @@ export function useGamepadStepJog(options: Options) {
         .catch((error: Error) => setNotice(error.message))
       return
     }
-    if (mode === "direct") {
-      direct.sample(input, Date.now())
-      return
+    const held = {
+      rpm: input.rpmDelta ?? 0,
+      start: input.spindleModifierHeld && input.startHeld,
+      stop: input.spindleModifierHeld && input.spindleStopHeld,
     }
-    const direction = gesture.current.take(input)
-    if (!direction) return
-    const command: MachineCommand = {
-      type: "jog",
-      axis: direction.axis,
-      distance: options.step * direction.sign,
-      speedScale: options.speed / 100,
+    const previous = actionHeld.current
+    actionHeld.current = held
+    const now = Date.now()
+    let action: Parameters<typeof direct.action>[0] | null = null
+    if (input.spindleModifierHeld && !input.stepModifierHeld) {
+      if (held.stop && !previous.stop) action = { kind: "stop" }
+      else if (!held.stop && held.start && !previous.start && !held.rpm) {
+        if (input.neutral && !input.enableHeld)
+          action = { kind: "start", rpm: options.spindleRpm }
+        else setNotice("Centre both sticks and release LB before spindle start")
+      } else if (
+        !held.stop &&
+        !held.start &&
+        held.rpm &&
+        held.rpm !== previous.rpm
+      ) {
+        const limits = snapshot.limits
+        if (limits)
+          action = {
+            kind: "target",
+            rpm: Math.max(
+              limits.spindleRpmMin,
+              Math.min(
+                limits.spindleRpmMax,
+                options.spindleRpm + held.rpm * 1000
+              )
+            ),
+          }
+      }
     }
-    if (busy.current || !options.allowed(command)) {
-      log.info("Gamepad gesture refused while unavailable", command)
-      setNotice("Step refused while unavailable — return to centre")
-      return
+    const direction = mode === "step" ? gesture.current.take(input) : null
+    if (direction)
+      action = {
+        kind: "step",
+        axis: direction.axis,
+        distance: options.step * direction.sign,
+        speedScale: options.speed / 100,
+      }
+    if (action) {
+      const entry =
+        action.kind === "step"
+          ? snapshot.simulatorController.step
+          : snapshot.simulatorController.spindle
+      if (entry.allowed) {
+        setNotice(`${action.kind} requested…`)
+        direct.action(action, now)
+      } else
+        setNotice(entry.reason ?? "Controller action unavailable — press again")
     }
-    busy.current = true
-    log.info("Gamepad step requested", command)
-    setNotice(`Jog ${direction.axis} ${command.distance} mm…`)
-    void options
-      .execute(command)
-      .then((result) => {
-        log.info("Gamepad step confirmed", {
-          state: result.telemetry?.state,
-          position: result.telemetry?.machine,
-        })
-        if (armedRef.current) setNotice("Step confirmed — return to centre")
-      })
-      .catch((error: Error) => disarm(error.message))
-      .finally(() => {
-        busy.current = false
-      })
+    direct.sample(input, now)
   })
   useEffect(() => {
     disarm()
@@ -141,7 +164,7 @@ export function useGamepadStepJog(options: Options) {
     let previousInput = ""
     let frame = 0
     const poll = (now: number) => {
-      if (now - lastFrame > (mode === "direct" ? 150 : 250) && armedRef.current)
+      if (now - lastFrame > 150 && armedRef.current)
         disarm("Controller disarmed — input delayed")
       lastFrame = now
       const inputs = Array.from(navigator.getGamepads())
@@ -163,6 +186,8 @@ export function useGamepadStepJog(options: Options) {
         const observed = input && {
           x: Math.round(input.x * 10) / 10,
           y: Math.round(input.y * 10) / 10,
+          z: Math.round(input.z * 10) / 10,
+          xModifier: input.spindleModifierHeld,
           lb: input.enableHeld,
           rb: input.stepModifierHeld,
           b: input.stopHeld,
@@ -209,7 +234,6 @@ export function useGamepadStepJog(options: Options) {
       !options.simulator ||
       !options.connectionId ||
       !document.hasFocus() ||
-      busy.current ||
       direct.pending
     )
       return
@@ -217,32 +241,23 @@ export function useGamepadStepJog(options: Options) {
       !input?.neutral ||
       input.enableHeld ||
       input.stepModifierHeld ||
-      input.stopHeld
+      input.stopHeld ||
+      input.spindleModifierHeld ||
+      input.startHeld ||
+      input.spindleStopHeld
     ) {
       setNotice(
-        "Centre the stick and release the D-pad, LB, RB and B before arming"
+        "Centre both sticks and release the D-pad, LB, RB, A, B, X and Y before arming"
       )
       return
     }
-    if (
-      !options.allowed({
-        type: "jog",
-        axis: "X",
-        distance: options.step,
-        speedScale: options.speed / 100,
-      })
-    ) {
+    if (!snapshot.simulatorController.arm.allowed) {
       setNotice("Simulator is unavailable for arming")
       return
     }
-    if (mode === "direct") {
-      if (Math.hypot(input.x, input.y) > 0.2) {
-        setNotice("Centre the stick before arming Direct")
-        return
-      }
-      setNotice("Arming Direct simulator control…")
-      if (!(await direct.begin())) return
-    }
+    setNotice("Arming simulator controller…")
+    if (!(await direct.begin())) return
+    actionHeld.current = { rpm: 0, start: false, stop: false }
     gesture.current.reset()
     gesture.current.take(input)
     armedRef.current = true
