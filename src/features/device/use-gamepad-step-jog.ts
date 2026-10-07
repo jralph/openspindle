@@ -26,11 +26,13 @@ export function useGamepadStepJog(options: Options) {
   const machine = useMachineHost()
   const snapshot = useMachineSnapshot()
   const armedRef = useRef(false)
+  const armEpoch = useRef(0)
   const live = useRef<ControllerInput | null>(null)
   const gesture = useRef(new StepGesture())
   const actionHeld = useRef({ rpm: 0, start: false, stop: false })
   const stepButtonHeld = useRef(false)
   const disarm = (message = "Controller disarmed", halt = false) => {
+    armEpoch.current++
     if (armedRef.current) log.info(`Gamepad: ${message}`)
     armedRef.current = false
     gesture.current.reset()
@@ -256,10 +258,31 @@ export function useGamepadStepJog(options: Options) {
       return
     }
     setNotice("Arming simulator controller…")
+    const epoch = ++armEpoch.current
     if (!(await direct.begin())) return
+    if (epoch !== armEpoch.current) return
+    const current = live.current
+    if (
+      !current?.supported ||
+      current.key !== input.key ||
+      !current.neutral ||
+      current.enableHeld ||
+      current.stepModifierHeld ||
+      current.stopHeld ||
+      current.spindleModifierHeld ||
+      current.startHeld ||
+      current.spindleStopHeld ||
+      !document.hasFocus() ||
+      document.hidden
+    ) {
+      disarm(
+        "Controls changed while arming — centre and release, then arm again"
+      )
+      return
+    }
     actionHeld.current = { rpm: 0, start: false, stop: false }
     gesture.current.reset()
-    gesture.current.take(input)
+    gesture.current.take(current)
     armedRef.current = true
     setArmed(true)
     log.info("Gamepad armed", {

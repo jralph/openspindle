@@ -5,8 +5,17 @@ export class DirectMotion {
   private position: Xyz
   private velocity: Xyz = [0, 0, 0]
   private desired: Xyz = [0, 0, 0]
-  private endpoint: { axis: 0 | 1 | 2; value: number; rate: number } | null =
-    null
+  private endpoint: {
+    axis: 0 | 1 | 2
+    value: number
+    start: number
+    distance: number
+    sign: number
+    peak: number
+    ramp: number
+    cruise: number
+    elapsed: number
+  } | null = null
   private last: number
   private expiresAt = Infinity
   private expired = false
@@ -61,10 +70,21 @@ export class DirectMotion {
     const value = this.position[axis] + distance
     if (value < this.bounds.min[axis] || value > this.bounds.max[axis])
       return "Step exceeds the simulator travel envelope"
+    const length = Math.abs(distance)
+    const peak = Math.min(
+      (this.axisRates[axis] / 60) * speedScale,
+      Math.sqrt(length * this.acceleration)
+    )
     this.endpoint = {
       axis,
       value,
-      rate: (this.axisRates[axis] / 60) * speedScale,
+      start: this.position[axis],
+      distance: length,
+      sign: Math.sign(distance),
+      peak,
+      ramp: peak / this.acceleration,
+      cruise: Math.max(0, (length - (peak * peak) / this.acceleration) / peak),
+      elapsed: 0,
     }
     return null
   }
@@ -98,14 +118,34 @@ export class DirectMotion {
       const seconds = ((end - this.last) / 1000) * speed
       const endpoint = this.endpoint
       if (endpoint) {
-        const remaining = endpoint.value - this.position[endpoint.axis]
+        // A rest-to-rest profile reaches the endpoint at zero velocity without a snap.
+        const total = 2 * endpoint.ramp + endpoint.cruise
+        endpoint.elapsed = Math.min(total, endpoint.elapsed + seconds)
+        const time = endpoint.elapsed
+        let travel: number
+        let velocity: number
+        if (time < endpoint.ramp) {
+          velocity = this.acceleration * time
+          travel = (this.acceleration * time * time) / 2
+        } else if (time < endpoint.ramp + endpoint.cruise) {
+          velocity = endpoint.peak
+          travel = endpoint.peak * (time - endpoint.ramp / 2)
+        } else {
+          const remaining = total - time
+          velocity = this.acceleration * remaining
+          travel =
+            endpoint.distance - (this.acceleration * remaining * remaining) / 2
+        }
+        this.position[endpoint.axis] = endpoint.start + endpoint.sign * travel
+        this.velocity = [0, 0, 0]
+        this.velocity[endpoint.axis] = endpoint.sign * velocity
         this.desired = [0, 0, 0]
-        this.desired[endpoint.axis] =
-          Math.sign(remaining) *
-          Math.min(
-            endpoint.rate,
-            Math.sqrt(2 * this.acceleration * Math.abs(remaining))
-          )
+        if (time === total) {
+          this.position[endpoint.axis] = endpoint.value
+          this.endpoint = null
+        }
+        this.last = end
+        continue
       }
       const difference = this.desired.map((v, axis) => v - this.velocity[axis])
       const length = Math.hypot(...difference)
@@ -120,18 +160,8 @@ export class DirectMotion {
           this.bounds.min[axis],
           Math.min(this.bounds.max[axis], next)
         )
-        if (
-          endpoint?.axis === axis &&
-          (endpoint.value - next) * (endpoint.value - this.position[axis]) <= 0
-        ) {
-          this.position[axis] = endpoint.value
-          this.velocity[axis] = 0
-          this.desired[axis] = 0
-          this.endpoint = null
-        } else {
-          this.position[axis] = bounded
-          this.velocity[axis] = bounded === next ? after : 0
-        }
+        this.position[axis] = bounded
+        this.velocity[axis] = bounded === next ? after : 0
       }
       this.last = end
     }

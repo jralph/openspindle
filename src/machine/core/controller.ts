@@ -517,6 +517,9 @@ export class MachineController {
         this.trace.record("note", reason)
         this.ports.log?.warn(reason)
         void this.endSimulatedJog(token).catch(() => {})
+      },
+      () => {
+        if (this.direct?.token.sessionId === token.sessionId) this.publish()
       }
     )
     const direct = {

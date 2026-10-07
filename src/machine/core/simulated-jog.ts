@@ -22,6 +22,7 @@ export class SimulatedJogOwner {
   readonly token: SimulatedJogSession
   readonly mode: "step" | "direct"
   private readonly onExpired: (reason: string) => void
+  private readonly onChanged: () => void
   private timer: TimerHandle | null = null
   private sequence = 0
   private actionSequence = 0
@@ -39,12 +40,14 @@ export class SimulatedJogOwner {
     context: OperationContext,
     token: SimulatedJogSession,
     mode: "step" | "direct",
-    onExpired: (reason: string) => void
+    onExpired: (reason: string) => void,
+    onChanged: () => void
   ) {
     this.context = context
     this.token = token
     this.mode = mode
     this.onExpired = onExpired
+    this.onChanged = onChanged
   }
   async start() {
     await this.exchange(
@@ -55,6 +58,7 @@ export class SimulatedJogOwner {
     this.active = true
     this.expectedTool = this.context.session.store.telemetry?.tool ?? null
     this.expireAt(this.context.clock.now() + DIRECT_INPUT_TTL_MS)
+    this.onChanged()
   }
   private inputReason(
     input: SimulatedJogSession & { capturedAt: number }
@@ -161,6 +165,7 @@ export class SimulatedJogOwner {
     if (stopping && this.active) {
       this.restAfter = this.context.session.store.sequence
       this.context.session.requestStatus(true)
+      this.onChanged()
     }
     return receipt
   }
@@ -218,6 +223,7 @@ export class SimulatedJogOwner {
     this.context.signal.addEventListener("abort", relay, { once: true })
     this.actionAbort = abort
     this.actionKind = action.kind
+    this.onChanged()
     try {
       const receipt = await this.exchange(
         {
@@ -279,6 +285,7 @@ export class SimulatedJogOwner {
       if (this.actionAbort === abort) {
         this.actionAbort = null
         this.actionKind = null
+        this.onChanged()
       }
     }
   }
@@ -296,6 +303,7 @@ export class SimulatedJogOwner {
     if (this.ended) return this.ended
     this.active = false
     this.context.clock.clearTimeout(this.timer)
+    this.onChanged()
     this.actionAbort?.abort(
       new MachineError("cancelled", "Controller session is ending.")
     )
@@ -355,7 +363,10 @@ export class SimulatedJogOwner {
     this.pending = promise
     void promise
       .finally(() => {
-        if (this.pending === promise) this.pending = null
+        if (this.pending === promise) {
+          this.pending = null
+          this.onChanged()
+        }
       })
       .catch(() => {})
     return promise
