@@ -251,6 +251,8 @@ export function DevicePanel({
             reason={reason}
             allowed={allowed}
             execute={execute}
+            executeGamepad={(action) => command.mutateAsync(action)}
+            stop={() => stop.mutateAsync(undefined)}
           />
           <DeviceSpindleCard
             device={device}

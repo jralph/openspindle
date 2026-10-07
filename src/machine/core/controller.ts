@@ -278,6 +278,12 @@ export class MachineController {
    */
   async connect(input: unknown): Promise<MachineSnapshot> {
     const { confirmed = false, ...target } = parse(ConnectRequestSchema, input)
+    // Feasibility build: enforce simulator isolation at the connection owner, not only in UI.
+    if (!isSimulator(target))
+      throw new MachineError(
+        "refused",
+        "This gamepad prototype connects only to a local Z1 simulator. Physical-machine connections are disabled."
+      )
     if (!this.connectedTo(target)) this.confirmLeavingJob(confirmed, "connect")
     this.endRestart()
     if (target.name !== undefined) return this.open(target, confirmed)

@@ -17,6 +17,7 @@ import type {
 } from "@/machine/contract"
 import { OptionSelect } from "@/components/option-select"
 import { ControlCard } from "./device-control-card"
+import { GamepadStepControls } from "./gamepad-step-controls"
 
 /** The jog steps offered, in millimetres, and speeds, in percent of the machine's maximum. */
 const JOG_STEPS = [0.1, 1, 5, 10]
@@ -42,11 +43,15 @@ export function DeviceJogCard({
   reason,
   allowed,
   execute,
+  executeGamepad,
+  stop,
 }: {
   limits: ControlLimits | null
   reason: (key: AvailabilityKey, action?: MachineCommand) => string | null
   allowed: (action: MachineCommand) => boolean
   execute: (action: MachineCommand) => void
+  executeGamepad: (action: MachineCommand) => Promise<unknown>
+  stop: () => Promise<unknown>
 }) {
   const fieldId = useId()
   const [step, setStep] = useState(1)
@@ -143,6 +148,13 @@ export function DeviceJogCard({
           </Field>
         </FieldGroup>
       </div>
+      <GamepadStepControls
+        step={step}
+        speed={speed}
+        allowed={allowed}
+        execute={executeGamepad}
+        stop={stop}
+      />
     </ControlCard>
   )
 }
