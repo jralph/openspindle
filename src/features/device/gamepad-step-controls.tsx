@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/field"
 import { OptionSelect } from "@/components/option-select"
 import { isSimulator } from "@/machine/contract"
-import type { MachineCommand } from "@/machine/contract"
+import type { MachineCommand, MachineSnapshot } from "@/machine/contract"
 import { useMachineSnapshot } from "@/platform/machine"
 import { useGamepadStepJog } from "./use-gamepad-step-jog"
 
@@ -18,15 +18,17 @@ import { useGamepadStepJog } from "./use-gamepad-step-jog"
 export function GamepadStepControls({
   step,
   speed,
+  adjustStep,
   allowed,
   execute,
   stop,
 }: {
   step: number
   speed: number
+  adjustStep: (delta: -1 | 1) => void
   allowed: (action: MachineCommand) => boolean
-  execute: (action: MachineCommand) => Promise<unknown>
-  stop: () => Promise<unknown>
+  execute: (action: MachineCommand) => Promise<MachineSnapshot>
+  stop: () => Promise<MachineSnapshot>
 }) {
   const id = useId()
   const snapshot = useMachineSnapshot()
@@ -37,6 +39,7 @@ export function GamepadStepControls({
     simulator,
     step,
     speed,
+    adjustStep,
     allowed,
     execute,
     stop,
@@ -109,6 +112,10 @@ export function GamepadStepControls({
         </FieldDescription>
       )}
       <FieldDescription role="status">{input.notice}</FieldDescription>
+      <FieldDescription>
+        Hold RB and tap D-pad left/right to decrease/increase the step size.
+        Release LB first. This shortcut never jogs.
+      </FieldDescription>
     </FieldSet>
   )
 }

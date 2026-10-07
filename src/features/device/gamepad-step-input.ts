@@ -9,6 +9,8 @@ export type ControllerInput = {
   y: number
   neutral: boolean
   enableHeld: boolean
+  stepModifierHeld: boolean
+  stepDelta: -1 | 1 | null
   stopHeld: boolean
   conflicting: boolean
   direction: StepDirection | null
@@ -30,6 +32,9 @@ export function readController(pad: Gamepad): ControllerInput {
   const dpad = up || down || left || right
   const conflicting =
     Number(up) + Number(down) + Number(left) + Number(right) > 1
+  let stepDelta: -1 | 1 | null = null
+  if (pressed(5) && !pressed(4) && !conflicting && (left || right))
+    stepDelta = right ? 1 : -1
   let direction: StepDirection | null = null
   if (dpad) {
     // Ambiguous D-pad combinations are consumed without moving.
@@ -50,6 +55,8 @@ export function readController(pad: Gamepad): ControllerInput {
     y,
     neutral: supported && !dpad && Math.max(Math.abs(x), Math.abs(y)) <= 0.25,
     enableHeld: pressed(4),
+    stepModifierHeld: pressed(5),
+    stepDelta,
     stopHeld: pressed(1),
     conflicting,
     direction: supported ? direction : null,
@@ -63,7 +70,12 @@ export class StepGesture {
     this.ready = false
   }
   take(input: ControllerInput): StepDirection | null {
-    if (!input.supported || input.stopHeld || input.conflicting) {
+    if (
+      !input.supported ||
+      input.stopHeld ||
+      input.conflicting ||
+      input.stepModifierHeld
+    ) {
       this.reset()
       return null
     }

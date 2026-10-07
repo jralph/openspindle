@@ -14,6 +14,7 @@ import type {
   Axis,
   ControlLimits,
   MachineCommand,
+  MachineSnapshot,
 } from "@/machine/contract"
 import { OptionSelect } from "@/components/option-select"
 import { ControlCard } from "./device-control-card"
@@ -50,8 +51,8 @@ export function DeviceJogCard({
   reason: (key: AvailabilityKey, action?: MachineCommand) => string | null
   allowed: (action: MachineCommand) => boolean
   execute: (action: MachineCommand) => void
-  executeGamepad: (action: MachineCommand) => Promise<unknown>
-  stop: () => Promise<unknown>
+  executeGamepad: (action: MachineCommand) => Promise<MachineSnapshot>
+  stop: () => Promise<MachineSnapshot>
 }) {
   const fieldId = useId()
   const [step, setStep] = useState(1)
@@ -151,6 +152,16 @@ export function DeviceJogCard({
       <GamepadStepControls
         step={step}
         speed={speed}
+        adjustStep={(delta) =>
+          setStep((current) => {
+            const index = jogSteps.indexOf(current)
+            return (
+              jogSteps[
+                Math.max(0, Math.min(jogSteps.length - 1, index + delta))
+              ] ?? current
+            )
+          })
+        }
         allowed={allowed}
         execute={executeGamepad}
         stop={stop}

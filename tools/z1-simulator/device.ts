@@ -699,7 +699,11 @@ export class SimulatedZ1 {
         this.mpos[index] = Number(
           (this.mpos[index] + Number(axis[2])).toFixed(4)
         )
-        this.queueMove(from, word(code, "F") ?? this.seekRate, 0, false)
+        // SimpleShell::jog takes F as a fraction of the moving axis's maximum,
+        // unlike a G-code feed in mm/min, and starts without the queue-fill delay.
+        const speedScale = word(code, "F") ?? 1
+        this.queueMove(from, this.limits.axisRate[index] * speedScale, 0, false)
+        this.queue.flush(this.time())
       }
       this.ok(text)
       return

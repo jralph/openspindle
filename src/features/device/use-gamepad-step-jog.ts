@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react"
-import type { MachineCommand } from "@/machine/contract"
+import type { MachineCommand, MachineSnapshot } from "@/machine/contract"
+import { log } from "@/app/errors/log"
 import { readController, StepGesture } from "./gamepad-step-input"
 import type { ControllerInput } from "./gamepad-step-input"
 
@@ -8,9 +9,10 @@ type Options = {
   simulator: boolean
   step: number
   speed: number
+  adjustStep: (delta: -1 | 1) => void
   allowed: (action: MachineCommand) => boolean
-  execute: (action: MachineCommand) => Promise<unknown>
-  stop: () => Promise<unknown>
+  execute: (action: MachineCommand) => Promise<MachineSnapshot>
+  stop: () => Promise<MachineSnapshot>
 }
 
 /** Renderer input probe; every simulator command still uses the existing machine gateway. */
@@ -23,7 +25,9 @@ export function useGamepadStepJog(options: Options) {
   const live = useRef<ControllerInput | null>(null)
   const busy = useRef(false)
   const gesture = useRef(new StepGesture())
+  const stepButtonHeld = useRef(false)
   const disarm = (message = "Controller disarmed") => {
+    if (armedRef.current) log.info(`Gamepad: ${message}`)
     armedRef.current = false
     gesture.current.reset()
     setArmed(false)
@@ -31,6 +35,21 @@ export function useGamepadStepJog(options: Options) {
   }
   const handle = useEffectEvent((input: ControllerInput | null) => {
     live.current = input
+    const delta = input?.stepDelta ?? null
+    const adjusting = delta !== null && input?.stopHeld === false
+    if (
+      adjusting &&
+      !stepButtonHeld.current &&
+      input.supported &&
+      options.simulator &&
+      document.hasFocus() &&
+      !document.hidden
+    ) {
+      options.adjustStep(delta)
+      log.info("Gamepad step-size change", { delta })
+      setNotice("Step size changed")
+    }
+    stepButtonHeld.current = adjusting
     if (!armedRef.current) return
     if (
       !input?.supported ||
@@ -44,7 +63,15 @@ export function useGamepadStepJog(options: Options) {
     if (input.stopHeld) {
       disarm("Stop requested — controller disarmed")
       // Stop bypasses the normal command's busy gate.
-      void options.stop().catch((error: Error) => setNotice(error.message))
+      void options
+        .stop()
+        .then((result) =>
+          log.info("Gamepad Stop confirmed", {
+            state: result.telemetry?.state,
+            position: result.telemetry?.machine,
+          })
+        )
+        .catch((error: Error) => setNotice(error.message))
       return
     }
     const direction = gesture.current.take(input)
@@ -56,14 +83,20 @@ export function useGamepadStepJog(options: Options) {
       speedScale: options.speed / 100,
     }
     if (busy.current || !options.allowed(command)) {
+      log.info("Gamepad gesture refused while unavailable", command)
       setNotice("Step refused while unavailable — return to centre")
       return
     }
     busy.current = true
+    log.info("Gamepad step requested", command)
     setNotice(`Jog ${direction.axis} ${command.distance} mm…`)
     void options
       .execute(command)
-      .then(() => {
+      .then((result) => {
+        log.info("Gamepad step confirmed", {
+          state: result.telemetry?.state,
+          position: result.telemetry?.machine,
+        })
         if (armedRef.current) setNotice("Step confirmed — return to centre")
       })
       .catch((error: Error) => disarm(error.message))
@@ -78,6 +111,7 @@ export function useGamepadStepJog(options: Options) {
     let lastFrame = performance.now()
     let lastDisplay = 0
     let previousDisplay = ""
+    let previousInput = ""
     let frame = 0
     const poll = (now: number) => {
       if (now - lastFrame > 250 && armedRef.current)
@@ -97,6 +131,21 @@ export function useGamepadStepJog(options: Options) {
       handle(input)
       if (now - lastDisplay >= 100) {
         lastDisplay = now
+        const observed = input && {
+          x: Math.round(input.x * 10) / 10,
+          y: Math.round(input.y * 10) / 10,
+          lb: input.enableHeld,
+          rb: input.stepModifierHeld,
+          b: input.stopHeld,
+          direction: input.direction,
+          neutral: input.neutral,
+          armed: armedRef.current,
+        }
+        const inputSignature = JSON.stringify(observed)
+        if (inputSignature !== previousInput) {
+          previousInput = inputSignature
+          log.info("Gamepad input", observed)
+        }
         const display = JSON.stringify(inputs)
         if (display !== previousDisplay) {
           previousDisplay = display
@@ -132,9 +181,14 @@ export function useGamepadStepJog(options: Options) {
       busy.current
     )
       return
-    if (!input?.neutral || input.enableHeld || input.stopHeld) {
+    if (
+      !input?.neutral ||
+      input.enableHeld ||
+      input.stepModifierHeld ||
+      input.stopHeld
+    ) {
       setNotice(
-        "Centre the stick and release the D-pad, LB and B before arming"
+        "Centre the stick and release the D-pad, LB, RB and B before arming"
       )
       return
     }
@@ -142,6 +196,7 @@ export function useGamepadStepJog(options: Options) {
     gesture.current.take(input)
     armedRef.current = true
     setArmed(true)
+    log.info("Gamepad armed", { step: options.step, speed: options.speed })
     setNotice("Armed — hold LB and choose a direction for one step")
   }
   const select = (key: string) => {

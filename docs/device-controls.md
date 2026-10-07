@@ -63,9 +63,15 @@ Stop preempts everything: it cancels an in-flight transfer (the B5 frame, see [T
 
 The Jog card includes an experimental Xbox-style controller input monitor. Wake the controller with a button to expose it to the app. Select a controller when more than one is connected. Only controllers reported with the Gamepad API's standard mapping can jog; unknown layouts remain monitor-only. This feasibility build rejects physical-machine connections in the machine process. All motion, including ordinary manual controls, stays on a local Z1 simulator.
 
-Centre the left stick, release the D-pad, LB and B, then choose **Arm simulator jogging**. Hold LB and deflect the left stick or press a single D-pad direction to request one XY step at the Jog card's selected distance and speed. Stick diagonals select the stronger axis. Return the stick and D-pad to neutral before another step; held inputs do not repeat. Z is not bound. Busy or refused gestures are consumed without queuing or retrying. B while armed requests the existing Stop and disarms; it halts the simulator into Alarm.
+Centre the left stick, release the D-pad, LB, RB and B, then choose **Arm simulator jogging**. Hold LB and deflect the left stick or press a single D-pad direction to request one XY step at the Jog card's selected distance and speed. Stick diagonals select the stronger axis. Return the stick and D-pad to neutral before another step; held inputs do not repeat. Z is not bound. Busy or refused gestures are consumed without queuing or retrying. B while armed requests the existing Stop and disarms; it halts the simulator into Alarm.
+
+Release LB, hold **RB** and tap D-pad left/right to decrease/increase the selected step through the offered distances (normally 0.1, 1, 5 and 10 mm). Each press changes it once, clamped at either end. It also works while disarmed. Holding RB suppresses jogging, including with LB also held; return to centre after releasing RB before requesting another step.
+
+On the simulator, **Simulator preview → Start** displays a rotatable 3D bed and tool marker driven by reported machine positions, even with no imported job or selected plate. Drag to orbit and use the wheel to zoom. **Camera angle** switches to the fixed simulated camera view; **3D view** returns to perspective. The empty-project bed is display-only and adds nothing to the project.
 
 Changing connection or controller, losing the controller or app focus, leaving the Device page, or delaying input polling for more than 250 ms disarms. Reconnecting does not rearm. Disarming and releasing LB or the stick prevent further steps but do not cancel a finite step already sent: that step completes unless Stop interrupts it. No continuous, proportional-speed or latched motion is implemented. This is a throwaway feasibility prototype, not validated for physical machining.
+
+At the Info log level, the prototype records input changes (at most ten times per second), arming/disarming, requested or refused steps, and the simulator state and position after each confirmed step or Stop. These use the app's existing local diagnostic log so controller trials can be observed without desktop automation.
 
 ## Status
 
@@ -128,6 +134,8 @@ The part people read is the **console**, under the G-code on the Job tab: the co
 Under the console, a command line sends the machine one line as typed, of at most 256 characters. The connected machine's program rules that the project reports as errors, which block Run ([program rules](design-rules.md#program-rules)), check it first: on the Z1 they refuse, for example, `M4`, `M498.2` (which erases the tool data and work offsets the machine saves) and the firmware's own commands such as `rm`, `config-set` and `play`. It is then admitted like a command ([above](#admission-and-availability): for example, refused while a program runs), sent as a command frame and given five seconds for its acknowledgement. A rejection line fails it, and a line the firmware answers without an acknowledgement ends after that time, a late one swallowed for two seconds. A refusal's reason shows under the field and the machine's replies in the console; nothing verifies what the line did, and nothing is retried.
 
 ## Simulator
+
+A `$J` jog's `F` scales the moving axis's maximum rate and starts the queued move immediately, as stock firmware does.
 
 While **Settings › General › Z1 Simulator device** is on, as it is until the user turns it off, the app runs a simulated Z1 on 127.0.0.1:2223. It starts with the app, before the app connects to the last device again, and announces itself for discovery as Z1 Simulator, so **Connect device** lists it like a machine. Turning the setting off stops it and drops a connection to it; when another program listens on that port, it does not start, and the setting says why. Connected to it, the Device page has a **Simulator** card whose **Speed** (1× to 20×) sets how many times faster than a Z1 it moves, from its next move. The app keeps both in `simulator.json` in its data folder.
 
