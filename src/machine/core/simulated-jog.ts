@@ -113,12 +113,13 @@ export class SimulatedJogOwner {
   private async finish() {
     await this.pending?.catch(() => {})
     const { session } = this.context
-    const after = session.store.sequence
     await this.exchange(
       { kind: "end", sessionId: this.token.sessionId },
       0,
       3000
     )
+    // An Idle report received before end was acknowledged cannot prove this stop.
+    const after = session.store.sequence
     session.requestStatus(true)
     await session.store.waitFor(
       (telemetry) => telemetry.state === "Idle" && telemetry.feed === 0,

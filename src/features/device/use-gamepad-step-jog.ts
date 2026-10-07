@@ -150,10 +150,12 @@ export function useGamepadStepJog(options: Options) {
       const input =
         inputs.find((entry) => entry.key === selection) ??
         (selection ? null : (inputs[0] ?? null))
-      if (input?.key !== previousKey) {
-        if (armedRef.current) disarm("Controller changed — arm again")
+      const key = input?.key ?? null
+      if (key !== previousKey) {
+        // Invalidate a pending begin too, before its completion can arm this input.
+        disarm("Controller changed — arm again")
         gesture.current.reset()
-        previousKey = input?.key ?? null
+        previousKey = key
       }
       handle(input)
       if (now - lastDisplay >= 100) {
