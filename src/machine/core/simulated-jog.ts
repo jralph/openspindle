@@ -41,19 +41,22 @@ export class SimulatedJogOwner {
   }
   sample(input: SimulatedJogSample): Promise<SimulatedJogReceipt> {
     const now = this.context.clock.now()
-    if (
-      !this.active ||
+    let refusal: string | null = null
+    if (!this.active) refusal = "Direct session is no longer active"
+    else if (
       input.connectionId !== this.token.connectionId ||
-      input.sessionId !== this.token.sessionId ||
-      input.sequence <= this.sequence ||
-      input.capturedAt > now ||
-      input.capturedAt + DIRECT_INPUT_TTL_MS <= now
+      input.sessionId !== this.token.sessionId
     )
+      refusal = "Direct input belongs to another session"
+    else if (input.sequence <= this.sequence)
+      refusal = `Direct input sequence ${input.sequence} did not advance past ${this.sequence}`
+    else if (input.capturedAt > now)
+      refusal = `Direct input timestamp is ${input.capturedAt - now} ms ahead of the machine clock`
+    else if (input.capturedAt + DIRECT_INPUT_TTL_MS <= now)
+      refusal = `Direct input expired at ${now - input.capturedAt} ms old`
+    if (refusal)
       return Promise.reject(
-        new MachineError(
-          "refused",
-          "Stale or mismatched Direct input. Arm again."
-        )
+        new MachineError("refused", `${refusal}. Arm again.`)
       )
     if (this.pending)
       return Promise.reject(

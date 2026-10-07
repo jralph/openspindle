@@ -29,7 +29,7 @@ The machine process reserves **Direct simulator jogging** as its foreground acti
 
 Direct preserves Z and clamps XY to the Z1 fixture kit's configured work envelope, with inward steering still available at an edge. It refuses to arm outside that envelope. Home can leave the tool outside it; use ordinary finite jogging to enter the bed area first. Known minor limitation: an acknowledged Direct begin refusal currently disconnects the simulator, so reconnect before following the finite-jog instruction. The simulator speed multiplier affects movement, while sample expiry remains in wall-clock milliseconds.
 
-This protocol is implemented only in the local simulator. It does not establish Direct support, stopping distance or cutting capability on stock or community Z1 firmware. Local diagnostics distinguish a requested zero vector from confirmed Idle, and report its observed delay and final position.
+This protocol is implemented only in the local simulator. It does not establish Direct support, stopping distance or cutting capability on stock or community Z1 firmware. Local diagnostics distinguish a requested zero vector from confirmed Idle, and report its observed delay and final position. A rejected owner sample records its sequence, capture/receipt times and age, with a specific reason for inactive or mismatched sessions, non-increasing sequences, future timestamps or expired input.
 
 ## Cancellation findings
 

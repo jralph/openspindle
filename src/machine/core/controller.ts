@@ -572,6 +572,15 @@ export class MachineController {
     try {
       return await direct.owner.sample(sample)
     } catch (error) {
+      const receivedAt = this.ports.clock.now()
+      this.ports.log?.warn("Direct simulator sample rejected", {
+        reason: message(error, "Direct sample failed"),
+        sessionId: sample.sessionId,
+        sequence: sample.sequence,
+        capturedAt: sample.capturedAt,
+        receivedAt,
+        ageMs: receivedAt - sample.capturedAt,
+      })
       if (this.direct === direct && !direct.owner.ending)
         this.failDirect(direct, error)
       throw error
