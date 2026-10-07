@@ -8,16 +8,25 @@ export class DirectMotion {
   private expiresAt = Infinity
   private expired = false
   private speed = 1
+  private readonly axisRates: readonly [number, number]
+  private readonly acceleration: number
+  private readonly bounds: {
+    min: readonly [number, number]
+    max: readonly [number, number]
+  }
   constructor(
     position: Xyz,
-    private readonly axisRates: readonly [number, number],
-    private readonly acceleration: number,
-    private readonly bounds: {
+    axisRates: readonly [number, number],
+    acceleration: number,
+    bounds: {
       min: readonly [number, number]
       max: readonly [number, number]
     },
     now: number
   ) {
+    this.axisRates = axisRates
+    this.acceleration = acceleration
+    this.bounds = bounds
     this.position = [...position]
     this.last = now
   }
