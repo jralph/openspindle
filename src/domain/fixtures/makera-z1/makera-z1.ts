@@ -28,6 +28,7 @@ import { g32Grids } from "./wired-probe/grid"
 import { touchPoints } from "./wired-probe/touch-off"
 import { CLEARANCE_Z } from "./wired-probe/travel"
 import { Z1Bed } from "./z1-bed"
+import { Z1_WORK_AREA, Z1_WORK_AREA_ORIGIN } from "./work-envelope"
 
 /** An NC number to four decimals, without exponent notation or −0. */
 const ncNumber = (value: number) => String(Number(value.toFixed(4)) + 0)
@@ -56,8 +57,8 @@ export class MakeraZ1 extends FixtureKit {
   readonly deviceModels = ["Z1", "Z1 Pro"]
   readonly imageUrl = "/images/makera_z1.png"
   /** The official three-axis work envelope, not the bed's size. */
-  readonly workArea: Point3 = [200, 200, 100]
-  readonly workAreaOrigin = [-12, -12] as const
+  readonly workArea: Point3 = [...Z1_WORK_AREA]
+  readonly workAreaOrigin = Z1_WORK_AREA_ORIGIN
   readonly bed = new Z1Bed()
   /**
    * The firmware selects a Z touch probe, such as Makera's wired Probe 2.0, as T0 and the 3D

@@ -1,0 +1,13 @@
+/** The kit's work envelope, relative to Anchor 1; shared with its simulator. */
+export const Z1_WORK_AREA = [200, 200, 100] as const
+export const Z1_WORK_AREA_ORIGIN = [-12, -12] as const
+export function z1WorkBounds(anchor: readonly [number, number]) {
+  const min = [
+    anchor[0] + Z1_WORK_AREA_ORIGIN[0],
+    anchor[1] + Z1_WORK_AREA_ORIGIN[1],
+  ] as const
+  return {
+    min,
+    max: [min[0] + Z1_WORK_AREA[0], min[1] + Z1_WORK_AREA[1]] as const,
+  }
+}

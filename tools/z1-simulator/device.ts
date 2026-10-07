@@ -4,6 +4,16 @@ import {
 } from "../../src/domain/fixtures/makera-z1/motion.ts"
 import { SETTER_RADIUS } from "../../src/domain/fixtures/makera-z1/tool-setter.ts"
 import type { MachineLimits } from "../../src/domain/motion/limits.ts"
+import { z1WorkBounds } from "../../src/domain/fixtures/makera-z1/work-envelope.ts"
+import {
+  DIRECT_INPUT_TTL_MS,
+  DIRECT_SAMPLE_MS,
+} from "../../src/machine/contract/simulator-jog.ts"
+import {
+  readSimulatorJogCommand,
+  simulatorJogReplyLine,
+} from "../../src/machine/firmware/makera/simulator-jog.ts"
+import { DirectMotion } from "./direct-motion.ts"
 import { readSimulatedBedLine } from "../../src/machine/contract/simulator.ts"
 import type { SimulatedBed } from "../../src/machine/contract/simulator.ts"
 import { FRAME_TYPES } from "../../src/machine/firmware/makera/codec.ts"
@@ -170,6 +180,18 @@ export class SimulatedZ1 {
   private offset: Xyz = [-100, -100, -20]
   /** The limits the firmware loaded from its configuration when it started. */
   private limits: MachineLimits = Z1_DEFAULT_LIMITS
+  private direct: {
+    id: string
+    connectionId: string | null
+    sequence: number
+    deadline: number
+    ending: boolean
+    motion: DirectMotion
+  } | null = null
+  private directFeed = 0
+  private directMoving = false
+  private directStatusAt = 0
+  private readonly retiredDirect = new Set<string>()
   /** The moves under way and queued, which the player and scripts wait for. */
   private queue = new MotionQueue(Z1_DEFAULT_LIMITS, () => this.speed)
   /** What waits for the moves queued to end (Conveyor::wait_for_idle), in order. */
@@ -319,8 +341,139 @@ export class SimulatedZ1 {
   }
 
   dispose() {
+    this.disconnectDirect()
     clearInterval(this.timer)
     this.cancelPending()
+  }
+
+  /** TCP loss cancels only the input-driven simulator extension, never a normal job. */
+  disconnectDirect() {
+    if (!this.direct) return
+    this.mpos.splice(0, 3, ...this.direct.motion.halt(Date.now()))
+    this.retireDirect(this.direct.id)
+    this.direct = null
+    this.directFeed = 0
+    this.directMoving = false
+  }
+
+  private retireDirect(id: string) {
+    this.retiredDirect.add(id)
+    if (this.retiredDirect.size > 128)
+      this.retiredDirect.delete(this.retiredDirect.values().next().value!)
+  }
+
+  private advanceDirect(now: number) {
+    const direct = this.direct
+    if (!direct) return
+    const result = direct.motion.advance(now, this.speed)
+    this.mpos.splice(0, 3, ...result.position)
+    this.directFeed = result.feed
+    this.directMoving = result.moving
+    if (!direct.ending && (result.expired || now >= direct.deadline)) {
+      direct.ending = true
+      this.retireDirect(direct.id)
+      direct.motion.zero(now)
+      this.log(`Direct simulator input expired: ${direct.id}`)
+    }
+    if (direct.ending && !result.moving) {
+      this.log(
+        `Direct simulator stopped: ${direct.id} at ${this.mpos.join(",")}`
+      )
+      this.direct = null
+      this.directFeed = 0
+      this.reportStatus()
+    } else if (now - this.directStatusAt >= DIRECT_SAMPLE_MS) {
+      this.directStatusAt = now
+      this.reportStatus()
+    }
+  }
+
+  private directCommand(text: string) {
+    const command = readSimulatorJogCommand(text)
+    if (!command) {
+      this.lines("error: malformed sim-jog command")
+      return
+    }
+    const now = Date.now()
+    this.advanceDirect(now)
+    const id =
+      command.kind === "sample" ? command.sample.sessionId : command.sessionId
+    const sequence = command.kind === "sample" ? command.sample.sequence : 0
+    const reply = (reason: string | null = null) =>
+      this.lines(
+        simulatorJogReplyLine({
+          sessionId: id,
+          sequence,
+          ok: reason === null,
+          reason,
+        })
+      )
+    if (command.kind === "begin") {
+      if (
+        this.direct ||
+        this.state(now) !== "Idle" ||
+        this.spindleOn ||
+        this.retiredDirect.has(id)
+      )
+        return reply("Simulator is unavailable for Direct arming")
+      const bounds = z1WorkBounds(this.anchor1)
+      if (
+        [0, 1].some(
+          (axis) =>
+            this.mpos[axis] < bounds.min[axis] ||
+            this.mpos[axis] > bounds.max[axis]
+        )
+      )
+        return reply("Jog into the simulator work area before arming Direct")
+      this.direct = {
+        id,
+        connectionId: null,
+        sequence: 0,
+        deadline: now + DIRECT_INPUT_TTL_MS,
+        ending: false,
+        motion: new DirectMotion(
+          [...this.mpos],
+          [this.limits.axisRate[0], this.limits.axisRate[1]],
+          this.limits.acceleration,
+          bounds,
+          now
+        ),
+      }
+      this.log(`Direct simulator started: ${id}`)
+      return reply()
+    }
+    const direct = this.direct
+    if (command.kind === "end") {
+      if (direct?.id === id) {
+        direct.ending = true
+        this.retireDirect(id)
+        direct.motion.zero(now)
+      }
+      reply()
+      this.advanceDirect(now)
+      return
+    }
+    const sample = command.sample
+    if (!direct || direct.id !== id || direct.ending)
+      return reply("Direct session has ended")
+    if (
+      sample.sequence <= direct.sequence ||
+      sample.capturedAt > now ||
+      now >= sample.capturedAt + DIRECT_INPUT_TTL_MS ||
+      (direct.connectionId !== null &&
+        direct.connectionId !== sample.connectionId)
+    )
+      return reply("Stale or mismatched Direct input")
+    direct.connectionId = sample.connectionId
+    direct.sequence = sample.sequence
+    direct.deadline = sample.capturedAt + DIRECT_INPUT_TTL_MS
+    direct.motion.target(
+      [sample.x, sample.y],
+      sample.speedScale,
+      direct.deadline,
+      now
+    )
+    reply()
   }
 
   /** Runs `done` later, unless a halt or a reboot comes first. */
@@ -382,6 +535,7 @@ export class SimulatedZ1 {
 
   private state(now = Date.now()): string {
     if (this.halted) return "Alarm"
+    if (this.directMoving) return "Run"
     const player = this.player
     if (player?.suspended) return "Pause"
     if (player?.suspending) return "Wait"
@@ -438,7 +592,8 @@ export class SimulatedZ1 {
       : `|T:${this.tool},${f3(this.lengths.offset)},${this.requestedTool}`
     const progress = this.progress(now)
     // Conveyor's feed under way is its block's planned speed; then the modal rate and the override.
-    const feed = live && running ? running.block.nominal * 60 : 0
+    let feed = live && running ? running.block.nominal * 60 : 0
+    if (this.direct) feed = this.directFeed
     const modal = this.motionMode === 0 ? this.seekRate : this.feedRate
     return [
       `<${state}`,
@@ -498,6 +653,10 @@ export class SimulatedZ1 {
   // ── Commands ───────────────────────────────────────────────────────────
 
   private command(text: string) {
+    if (text.startsWith("sim-jog ")) {
+      this.directCommand(text)
+      return
+    }
     if (text === "model") {
       this.lines(
         `model = Z1, ${this.options.model}, ${this.options.atc ? 4 : 0}, 0, ${this.state()}`
@@ -506,6 +665,10 @@ export class SimulatedZ1 {
     }
     if (text === "diagnose") {
       this.diagnose()
+      return
+    }
+    if (this.direct) {
+      this.lines("error: Direct simulator jogging owns motion")
       return
     }
     const [head = "", ...rest] = text.split(/\s+/)
@@ -892,6 +1055,7 @@ export class SimulatedZ1 {
 
   /** The machine stops where it is: the moves under way and queued are dropped, and nothing waits for them. */
   private stopMotion() {
+    this.disconnectDirect()
     const now = Date.now()
     const [x, y, z] = this.position(now)
     this.queue.stop(now)
@@ -1013,6 +1177,10 @@ export class SimulatedZ1 {
     const now = Date.now()
     const since = this.lastTick
     this.lastTick = now
+    if (this.direct) {
+      this.advanceDirect(now)
+      return
+    }
     if (this.halted) return
     this.queue.advance(now)
     this.drained(now)
