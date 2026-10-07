@@ -12,7 +12,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field"
 import { Separator } from "@/components/ui/separator"
 import { OptionSelect } from "@/components/option-select"
 import {
@@ -20,6 +26,14 @@ import {
   HeightMapGrid,
 } from "@/components/workspace/height-map-grid"
 import { featureDistance } from "@/domain/probing/metrology"
+import {
+  featureRepeatability,
+  measuredDimensions,
+  referenceCheck,
+  ReferenceInputSchema,
+} from "@/domain/probing/inspection-analysis"
+import { ParameterField, probingField } from "@/features/probing/probing-fields"
+import { useProbingForm } from "@/features/probing/probing-form"
 import type {
   InspectionFeature,
   InspectionSurface,
@@ -158,6 +172,23 @@ function InspectionResults({ report }: { report: InspectionReport }) {
   const to =
     targets.find((feature) => feature.operationId === toId) ?? targets.at(0)
   const comparison = from && to ? featureDistance(from, to) : null
+  const repetitions = featureRepeatability(report.features)
+  const dimensions = measuredDimensions(report.features, comparison)
+  const [referenceInput, setReferenceInput] = useState({
+    dimensionId: "",
+    nominal: NaN,
+    tolerance: 0.05,
+  })
+  const [referenceValid, setReferenceValid] = useState(false)
+  const referenceForm = useProbingForm(
+    referenceInput,
+    ReferenceInputSchema,
+    setReferenceInput,
+    setReferenceValid
+  )
+  const reference = referenceValid
+    ? referenceCheck(dimensions, referenceInput)
+    : null
   const save = useMutation({
     mutationFn: (format: "json" | "csv") =>
       host.files.save({
@@ -165,8 +196,8 @@ function InspectionResults({ report }: { report: InspectionReport }) {
         suggestedName: `openspindle-inspection-${report.jobId.slice(0, 8)}.${format}`,
         contents:
           format === "json"
-            ? inspectionJson(report, comparison)
-            : inspectionCsv(report, comparison),
+            ? inspectionJson(report, comparison, reference)
+            : inspectionCsv(report, comparison, reference),
       }),
     onSuccess: (result) => {
       if (result.status === "saved") toast.success("Inspection report saved.")
@@ -231,6 +262,104 @@ function InspectionResults({ report }: { report: InspectionReport }) {
         {report.surfaces.map((surface) => (
           <SurfaceFacts key={surface.operationId} surface={surface} />
         ))}
+        {repetitions.map((group) => (
+          <FieldSet key={group.operationIds.join(":")}>
+            <FieldLegend>Repeatability · {group.name}</FieldLegend>
+            <HeightMapFacts
+              facts={[
+                {
+                  label: "Completed / attempted",
+                  value: `${group.completedOperationIds.length} / ${group.attempted}`,
+                },
+              ]}
+            />
+            {group.quantities.map(({ quantity, statistics }) => (
+              <HeightMapFacts
+                key={quantity}
+                facts={[
+                  { label: `${quantity} · mean`, value: mm(statistics.mean) },
+                  { label: "Range", value: mm(statistics.range) },
+                  {
+                    label: "Sample standard deviation",
+                    value: mm(statistics.sampleStandardDeviation),
+                  },
+                ]}
+              />
+            ))}
+          </FieldSet>
+        ))}
+        {dimensions.length > 0 && (
+          <FieldSet>
+            <FieldLegend>Known-reference check</FieldLegend>
+            <FieldGroup>
+              {probingField(
+                referenceForm,
+                "dimensionId"
+              )((field) => (
+                <Field>
+                  <FieldLabel htmlFor={`${id}-dimension`}>
+                    Measured dimension
+                  </FieldLabel>
+                  <OptionSelect
+                    id={`${id}-dimension`}
+                    value={
+                      dimensions.some(
+                        (dimension) => dimension.id === field.value
+                      )
+                        ? field.value
+                        : ""
+                    }
+                    options={dimensions.map((dimension) => ({
+                      value: dimension.id,
+                      label: dimension.label,
+                    }))}
+                    onValueChange={field.onChange}
+                  />
+                </Field>
+              ))}
+              <ParameterField
+                id={`${id}-nominal`}
+                parameter={{
+                  label: "Known dimension",
+                  unit: "mm",
+                  min: 0.0001,
+                  max: 10000,
+                  step: 0.001,
+                  default: 1,
+                }}
+                field={probingField(referenceForm, "nominal")}
+                disabled={false}
+              />
+              <ParameterField
+                id={`${id}-tolerance`}
+                parameter={{
+                  label: "Tolerance ±",
+                  unit: "mm",
+                  min: 0,
+                  max: 10000,
+                  step: 0.001,
+                  default: 0.05,
+                }}
+                field={probingField(referenceForm, "tolerance")}
+                disabled={false}
+              />
+            </FieldGroup>
+            {reference && (
+              <HeightMapFacts
+                facts={[
+                  { label: "Measured", value: mm(reference.measured) },
+                  { label: "Signed error", value: mm(reference.error) },
+                  {
+                    label: "Reference result",
+                    value: reference.withinTolerance
+                      ? "Within tolerance"
+                      : "Outside tolerance",
+                  },
+                ]}
+              />
+            )}
+          </FieldSet>
+        )}
       </CardContent>
       <CardFooter className="flex flex-wrap gap-2">
         <Button

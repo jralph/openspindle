@@ -1,4 +1,6 @@
 import type { JobMeasurement, JobPhase } from "@/machine/contract"
+import { featureRepeatability } from "@/domain/probing/inspection-analysis"
+import type { ReferenceCheck } from "@/domain/probing/inspection-analysis"
 import type {
   FeatureDistance,
   InspectionFeature,
@@ -34,9 +36,19 @@ export type InspectionReport = {
 
 export function inspectionJson(
   report: InspectionReport,
-  comparison: FeatureDistance | null
+  comparison: FeatureDistance | null,
+  reference: ReferenceCheck | null = null
 ): string {
-  return JSON.stringify({ ...report, comparison }, null, 2)
+  return JSON.stringify(
+    {
+      ...report,
+      comparison,
+      repeatability: featureRepeatability(report.features),
+      reference,
+    },
+    null,
+    2
+  )
 }
 
 /** Quoted RFC-style cells, protecting user labels from spreadsheet formula evaluation. */
@@ -51,7 +63,8 @@ function cell(value: string | number | null): string {
 /** A long table: provenance, status and units accompany every exported value. */
 export function inspectionCsv(
   report: InspectionReport,
-  comparison: FeatureDistance | null
+  comparison: FeatureDistance | null,
+  reference: ReferenceCheck | null = null
 ): string {
   const rows: (string | number | null)[][] = [
     [
@@ -278,6 +291,63 @@ export function inspectionCsv(
       ["center_distance_xy", comparison.distanceXY],
     ] as const)
       add("", name, "complete", "machine", quantity, value)
+  }
+  for (const group of featureRepeatability(report.features)) {
+    const ids = group.operationIds.join(";")
+    add(
+      ids,
+      group.name,
+      "summary",
+      "machine",
+      "repeat_attempted",
+      group.attempted,
+      "count"
+    )
+    add(
+      ids,
+      group.name,
+      "summary",
+      "machine",
+      "repeat_completed_ids",
+      group.completedOperationIds.join(";"),
+      ""
+    )
+    for (const { quantity, statistics } of group.quantities)
+      for (const [statistic, value] of Object.entries(statistics))
+        add(
+          ids,
+          group.name,
+          "summary",
+          "machine",
+          `${quantity}_${statistic}`,
+          value,
+          statistic === "count" ? "count" : "mm"
+        )
+  }
+  if (reference) {
+    for (const [quantity, value] of [
+      ["measured", reference.measured],
+      ["nominal", reference.nominal],
+      ["tolerance", reference.tolerance],
+      ["signed_error", reference.error],
+    ] as const)
+      add(
+        reference.id,
+        reference.label,
+        "reference-check",
+        "dimension",
+        quantity,
+        value
+      )
+    add(
+      reference.id,
+      reference.label,
+      "reference-check",
+      "dimension",
+      "within_tolerance",
+      String(reference.withinTolerance),
+      ""
+    )
   }
   return `${rows.map((row) => row.map(cell).join(",")).join("\r\n")}\r\n`
 }

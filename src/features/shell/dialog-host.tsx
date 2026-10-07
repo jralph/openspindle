@@ -10,6 +10,7 @@ import { GCodeGlossaryDialog } from "@/features/glossary/gcode-glossary-dialog"
 import { ModelsDialog } from "@/features/models/models-dialog"
 import { AddOperationDialog } from "@/features/prepare/add-operation/add-operation-dialog"
 import { ProbingPicker } from "@/features/prepare/add-operation/probing-picker"
+import { InspectionWizard } from "@/features/probing/inspection-wizard"
 import { ProgramSourceDialog } from "@/features/prepare/source/program-source-dialog"
 import {
   NewProjectDialog,
@@ -83,6 +84,14 @@ function OpenDialog({ dialog }: { dialog: WorkspaceDialog }) {
       return <AddOperationDialog preset={dialog.preset} onClose={closeDialog} />
     case "probing":
       return <ProbingPicker onClose={closeDialog} />
+    case "inspection":
+      return (
+        <InspectionWizard
+          key={dialog.recipe}
+          recipe={dialog.recipe}
+          onClose={closeDialog}
+        />
+      )
     case "new-project":
       return <NewProjectDialog />
     case "open-project":

@@ -2,6 +2,7 @@ import { createAtom, useSelector } from "@tanstack/react-store"
 import type { ImportPlan } from "@/app/workspace/import-plan"
 import type { ProjectCandidate } from "@/features/project/use-project"
 import type { SettingsSection } from "@/features/settings/settings-dialog"
+import type { InspectionRecipe } from "@/domain/probing/inspection-recipes"
 
 /** Every dialog of the workspace. One is open at a time; the dialog host renders it. */
 export type WorkspaceDialog =
@@ -46,6 +47,7 @@ export type WorkspaceDialog =
     }
   /** A probing operation from a strategy and a probe of the tool library that performs it. */
   | { readonly kind: "probing" }
+  | { readonly kind: "inspection"; readonly recipe: InspectionRecipe }
   /** Starting a new project over unsaved changes: save them, discard them, or cancel. */
   | { readonly kind: "new-project" }
   /** Opening a project over unsaved changes: save them, discard them, or cancel. */

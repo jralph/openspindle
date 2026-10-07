@@ -1,4 +1,6 @@
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Ruler } from "lucide-react"
+import { INSPECTION_RECIPES } from "@/domain/probing/inspection-recipes"
+import { openDialog } from "@/features/shell/dialogs"
 import { Button } from "@/components/ui/button"
 import { FieldDescription, FieldLegend, FieldSet } from "@/components/ui/field"
 import { targetPlate } from "@/app/workspace/defaults"
@@ -155,6 +157,23 @@ export function ProbingSteps({
                 )
                   onAdded()
               }}
+            />
+          ))}
+        </ItemGroup>
+      </FieldSet>
+      <FieldSet>
+        <FieldLegend>Inspection</FieldLegend>
+        <ItemGroup className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {INSPECTION_RECIPES.map((recipe) => (
+            <StrategyItem
+              key={recipe.id}
+              title={recipe.label}
+              description={recipe.description}
+              picture={null}
+              icon={<Ruler />}
+              onSelect={() =>
+                openDialog({ kind: "inspection", recipe: recipe.id })
+              }
             />
           ))}
         </ItemGroup>
