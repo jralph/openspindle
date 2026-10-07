@@ -1,6 +1,6 @@
 # Gamepad feasibility prototype
 
-This local prototype explores an Xbox-style GameSir controller with OpenSpindle. Both controller modes use a simulator-only session extension for XYZ movement and spindle control. It is development code on `codex/gamepad-feasibility`, based on the upstream checkout. There is no published GitHub fork or pull request. Physical-machine connections are blocked by the machine process in this build.
+This prototype explores an Xbox-style GameSir controller with OpenSpindle. Both controller modes use a simulator-only session extension for XYZ movement and spindle control. Development is published on the [`codex/gamepad-feasibility` branch](https://github.com/jralph/openspindle/tree/codex/gamepad-feasibility) of the [jralph/openspindle fork](https://github.com/jralph/openspindle), retaining the upstream history for a future contribution. No upstream pull request has been opened. Physical-machine connections are blocked by the machine process in this build.
 
 ## Try it
 
