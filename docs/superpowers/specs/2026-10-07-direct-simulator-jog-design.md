@@ -74,4 +74,6 @@ Log session start/end, accepted sample sequence and age, expiry reason, zero req
 
 ## Deferred work
 
+Joseph's intended later bindings are right-stick up/down for Z and right-stick left/right for a configured fourth axis. RPM/feed adjustment uses held modifiers plus up/down input, with the exact stick-versus-D-pad interpretation awaiting clarification. A rate-adjustment modifier must suppress axis movement. The fourth-axis binding requires explicit support and configuration; it is not enabled merely because a controller axis exists. These preferences do not change this stage's fixed-Z XY scope.
+
 Latched directional motion, axis snapping, facing operations, cutting and gamepad RPM/feed controls remain separate changes. Enabling physical connections requires an independently verified stock-firmware motion/cancellation strategy and measured stopping behaviour. This simulator design grants no evidence or permission to bypass that work.
