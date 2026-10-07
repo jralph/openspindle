@@ -45,7 +45,12 @@ export function GamepadStepControls({
     stop,
   })
   const selected = input.selected
-  const canArm = simulator && selected?.supported === true
+  const canArm =
+    simulator &&
+    selected?.supported === true &&
+    snapshot.availability.jog.allowed &&
+    !input.pending
+  const modeId = `${id}-mode`
   let status = "No controller detected — wake it with a button"
   if (selected)
     status = selected.supported
@@ -76,6 +81,19 @@ export function GamepadStepControls({
         </Field>
       )}
       <FieldDescription>{status}</FieldDescription>
+      <Field>
+        <FieldLabel htmlFor={modeId}>Control mode</FieldLabel>
+        <OptionSelect
+          id={modeId}
+          className="w-full"
+          value={input.mode}
+          options={[
+            { value: "step", label: "Step" },
+            { value: "direct", label: "Direct" },
+          ]}
+          onValueChange={input.setMode}
+        />
+      </Field>
       {selected && (
         <FieldDescription className="font-numeric">
           Stick X {selected.x.toFixed(2)} · Y {selected.y.toFixed(2)} · LB{" "}
@@ -86,9 +104,10 @@ export function GamepadStepControls({
         <Button
           variant={input.armed ? "secondary" : "outline"}
           disabled={!input.armed && !canArm}
+          title={snapshot.availability.jog.reason ?? undefined}
           onClick={() => {
             if (input.armed) input.disarm()
-            else input.arm()
+            else void input.arm()
           }}
         >
           {input.armed ? "Disarm controller" : "Arm simulator jogging"}
@@ -97,15 +116,26 @@ export function GamepadStepControls({
           {input.armed ? "Armed" : "Disarmed"}
         </Badge>
       </div>
-      <FieldDescription>
-        Hold LB, then move the left stick or press the D-pad for one XY step.
-        Return to centre before the next step. B halts the simulator and
-        disarms. Z stays locked.
-      </FieldDescription>
-      <FieldDescription>
-        Each step finishes when you release the stick. Continuous steering is
-        not enabled in this prototype.
-      </FieldDescription>
+      {input.mode === "step" && (
+        <FieldDescription>
+          Hold LB, then move the left stick or press the D-pad for one XY step.
+          Return to centre before the next step. B halts the simulator and
+          disarms. Z stays locked.
+        </FieldDescription>
+      )}
+      {input.mode === "step" && (
+        <FieldDescription>
+          A sent step runs to its selected distance. Return to centre before
+          another step. Continuous steering is not enabled in Step mode.
+        </FieldDescription>
+      )}
+      {input.mode === "direct" && (
+        <FieldDescription>
+          Hold LB to steer; release the stick or LB to stop. Jog speed is the
+          maximum speed. B halts and disarms. Z stays locked. Disarm to use
+          other machine controls.
+        </FieldDescription>
+      )}
       {!simulator && (
         <FieldDescription>
           Connect the local Z1 simulator to enable jogging.

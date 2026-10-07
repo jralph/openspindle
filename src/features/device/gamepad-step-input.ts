@@ -13,6 +13,7 @@ export type ControllerInput = {
   stepDelta: -1 | 1 | null
   stopHeld: boolean
   conflicting: boolean
+  dpadHeld: boolean
   direction: StepDirection | null
 }
 
@@ -59,6 +60,7 @@ export function readController(pad: Gamepad): ControllerInput {
     stepDelta,
     stopHeld: pressed(1),
     conflicting,
+    dpadHeld: dpad,
     direction: supported ? direction : null,
   }
 }

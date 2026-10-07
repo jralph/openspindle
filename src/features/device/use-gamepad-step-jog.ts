@@ -1,5 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react"
 import type { MachineCommand, MachineSnapshot } from "@/machine/contract"
+import { useMachineHost, useMachineSnapshot } from "@/platform/machine"
+import { useGamepadDirectJog } from "./use-gamepad-direct-jog"
 import { log } from "@/app/errors/log"
 import { readController, StepGesture } from "./gamepad-step-input"
 import type { ControllerInput } from "./gamepad-step-input"
@@ -21,18 +23,39 @@ export function useGamepadStepJog(options: Options) {
   const [selection, setSelection] = useState("")
   const [armed, setArmed] = useState(false)
   const [notice, setNotice] = useState("Controller input monitor")
+  const [mode, setMode] = useState<"step" | "direct">("step")
+  const machine = useMachineHost()
+  const snapshot = useMachineSnapshot()
   const armedRef = useRef(false)
   const live = useRef<ControllerInput | null>(null)
   const busy = useRef(false)
   const gesture = useRef(new StepGesture())
   const stepButtonHeld = useRef(false)
-  const disarm = (message = "Controller disarmed") => {
+  const disarm = (message = "Controller disarmed", halt = false) => {
     if (armedRef.current) log.info(`Gamepad: ${message}`)
     armedRef.current = false
     gesture.current.reset()
     setArmed(false)
     setNotice(message)
+    direct.end(message, halt)
   }
+  const direct = useGamepadDirectJog({
+    machine,
+    connectionId: options.connectionId,
+    speed: options.speed,
+    onFailure: disarm,
+  })
+  const directSeen = useRef(false)
+  const observeSession = useEffectEvent(() => {
+    if (!direct.active) {
+      directSeen.current = false
+      return
+    }
+    if (snapshot.activity?.label === "Direct simulator jogging")
+      directSeen.current = true
+    else if (directSeen.current) disarm("Direct session ended — arm again")
+  })
+  useEffect(() => observeSession(), [direct.active, snapshot.activity])
   const handle = useEffectEvent((input: ControllerInput | null) => {
     live.current = input
     const delta = input?.stepDelta ?? null
@@ -61,7 +84,7 @@ export function useGamepadStepJog(options: Options) {
       return
     }
     if (input.stopHeld) {
-      disarm("Stop requested — controller disarmed")
+      disarm("Stop requested — controller disarmed", true)
       // Stop bypasses the normal command's busy gate.
       void options
         .stop()
@@ -72,6 +95,10 @@ export function useGamepadStepJog(options: Options) {
           })
         )
         .catch((error: Error) => setNotice(error.message))
+      return
+    }
+    if (mode === "direct") {
+      direct.sample(input, Date.now())
       return
     }
     const direction = gesture.current.take(input)
@@ -114,7 +141,7 @@ export function useGamepadStepJog(options: Options) {
     let previousInput = ""
     let frame = 0
     const poll = (now: number) => {
-      if (now - lastFrame > 250 && armedRef.current)
+      if (now - lastFrame > (mode === "direct" ? 150 : 250) && armedRef.current)
         disarm("Controller disarmed — input delayed")
       lastFrame = now
       const inputs = Array.from(navigator.getGamepads())
@@ -164,21 +191,24 @@ export function useGamepadStepJog(options: Options) {
       cancelAnimationFrame(frame)
       armedRef.current = false
       gesture.current.reset()
+      closeInput()
       window.removeEventListener("blur", loseFocus)
       window.removeEventListener("gamepaddisconnected", disconnect)
       document.removeEventListener("visibilitychange", loseFocus)
     }
-  }, [options.connectionId, selection])
+  }, [options.connectionId, selection, mode])
+  const closeInput = useEffectEvent(() => disarm("Controller input ended"))
   const selected =
     controllers.find((entry) => entry.key === selection) ??
     (selection ? null : (controllers[0] ?? null))
-  const arm = () => {
+  const arm = async () => {
     const input = live.current
     if (
       !options.simulator ||
       !options.connectionId ||
       !document.hasFocus() ||
-      busy.current
+      busy.current ||
+      direct.pending
     )
       return
     if (
@@ -192,12 +222,39 @@ export function useGamepadStepJog(options: Options) {
       )
       return
     }
+    if (
+      !options.allowed({
+        type: "jog",
+        axis: "X",
+        distance: options.step,
+        speedScale: options.speed / 100,
+      })
+    ) {
+      setNotice("Simulator is unavailable for arming")
+      return
+    }
+    if (mode === "direct") {
+      if (Math.hypot(input.x, input.y) > 0.2) {
+        setNotice("Centre the stick before arming Direct")
+        return
+      }
+      setNotice("Arming Direct simulator control…")
+      if (!(await direct.begin())) return
+    }
     gesture.current.reset()
     gesture.current.take(input)
     armedRef.current = true
     setArmed(true)
-    log.info("Gamepad armed", { step: options.step, speed: options.speed })
-    setNotice("Armed — hold LB and choose a direction for one step")
+    log.info("Gamepad armed", {
+      mode,
+      step: options.step,
+      speed: options.speed,
+    })
+    setNotice(
+      mode === "direct"
+        ? "Armed — hold LB to steer"
+        : "Armed — hold LB and choose a direction for one step"
+    )
   }
   const select = (key: string) => {
     disarm()
@@ -205,6 +262,12 @@ export function useGamepadStepJog(options: Options) {
     setSelection(key)
   }
   return {
+    mode,
+    setMode: (value: "step" | "direct") => {
+      disarm("Mode changed — arm again")
+      setMode(value)
+    },
+    pending: direct.pending,
     controllers,
     selected,
     selection: selected?.key ?? "",
