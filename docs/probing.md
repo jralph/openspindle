@@ -1,5 +1,9 @@
 # Probing
 
+The Job tab also combines origin and grid measurements into an [inspection report](metrology.md): stock/boss and pocket spans, machine positions, distances between centers, and sampled surface flatness, with JSON and CSV export. These use the setup cycles and their existing work-origin and compensation effects.
+
+Run-stage measurements belong only to operations whose generated route reports them. In particular, an unreported bare grid is skipped when placing a later anchored grid's measurements. Each probing method declares that reporting capability alongside its generation behavior.
+
 Probing operations measure with a probe from the tool library: they probe a height grid the machine compensates for, touch off the stock top and set work Z there, trace the outline of where the plate cuts or edges of its stock and fixtures, or find a corner or centre and set the work origin there. A probing operation is a strategy, what it is to do, and a probe that can do it. The strategy names what the operation does, not who runs it: the plate's machine performs it with a cycle of its own firmware where it has one that can run there, or else with OpenSpindle's own NC, made of the machine's probing NC ([what the machine contributes](#what-the-machine-contributes)). Like every operation, a probing operation is part of a plate's program, and its NC is generated from its settings whenever the plate is compiled, so it never goes stale.
 
 | Task        | What it does                                                        | Strategies                                                                 |

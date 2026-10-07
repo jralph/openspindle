@@ -173,7 +173,14 @@ export function useRunJob() {
       tipInProgram(plate, telemetry)
     )
     const runPlate = () => {
-      const session = createJobSession(plate, label, compiled, library, plan)
+      const session = createJobSession(
+        plate,
+        label,
+        compiled,
+        library,
+        plan,
+        device
+      )
       jobSessionStore.actions.begin(session)
       run.mutate(
         {

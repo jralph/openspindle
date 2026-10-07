@@ -25,6 +25,7 @@ import { MachineConsole } from "./machine-console"
 import { CutFacts } from "./cut-facts"
 import { GCodeListing } from "./gcode-listing"
 import { JobCamera } from "./job-camera"
+import { InspectionReportCard } from "./inspection-report-card"
 import { useJobActions, useRunChecklist, useRunJob } from "./job-hooks"
 import type { MachineAction } from "./job-hooks"
 import { JobSummary } from "./job-stages"
@@ -83,6 +84,7 @@ function JobPanel({
         <div className="flex flex-col gap-3 p-3">
           <JobSummary view={view} subject={subject} />
           <MachineDiagnosis />
+          <InspectionReportCard view={view} subject={subject} />
           <RunStageList
             view={view}
             subject={subject}

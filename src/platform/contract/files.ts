@@ -56,6 +56,21 @@ export const FILE_KINDS = {
     maxBytes: 512 * MiB,
     mime: "application/json",
   },
+  /** A read-only report of a probing run, never an executable program. */
+  inspectionJson: {
+    title: "Inspection report JSON",
+    extensions: ["json"],
+    saveExtensions: ["json"],
+    maxBytes: 32 * MiB,
+    mime: "application/json",
+  },
+  inspectionCsv: {
+    title: "Inspection report CSV",
+    extensions: ["csv"],
+    saveExtensions: ["csv"],
+    maxBytes: 32 * MiB,
+    mime: "text/csv",
+  },
   /** The recent protocol exchange with the machine (Help › Export Protocol Trace). */
   trace: {
     title: "Protocol trace",
@@ -79,6 +94,8 @@ export const FileKindSchema = z.enum([
   "program",
   "toolLibrary",
   "recovery",
+  "inspectionJson",
+  "inspectionCsv",
   "trace",
   "log",
 ])
