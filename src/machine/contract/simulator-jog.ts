@@ -2,6 +2,8 @@ import { z } from "zod"
 
 export const DIRECT_INPUT_TTL_MS = 150
 export const DIRECT_SAMPLE_MS = 50
+// Cross-process wall clocks can straddle a millisecond. Clamp small skew; never add it to TTL.
+export const DIRECT_CLOCK_SKEW_MS = 5
 export const SimulatedJogSessionSchema = z.strictObject({
   connectionId: z.string().uuid(),
   sessionId: z.string().uuid(),

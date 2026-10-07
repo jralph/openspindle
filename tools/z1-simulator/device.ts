@@ -8,6 +8,7 @@ import { z1WorkBounds } from "../../src/domain/fixtures/makera-z1/work-envelope.
 import {
   DIRECT_INPUT_TTL_MS,
   DIRECT_SAMPLE_MS,
+  DIRECT_CLOCK_SKEW_MS,
 } from "../../src/machine/contract/simulator-jog.ts"
 import {
   readSimulatorJogCommand,
@@ -458,7 +459,7 @@ export class SimulatedZ1 {
       return reply("Direct session has ended")
     if (
       sample.sequence <= direct.sequence ||
-      sample.capturedAt > now ||
+      sample.capturedAt > now + DIRECT_CLOCK_SKEW_MS ||
       now >= sample.capturedAt + DIRECT_INPUT_TTL_MS ||
       (direct.connectionId !== null &&
         direct.connectionId !== sample.connectionId)
@@ -466,7 +467,7 @@ export class SimulatedZ1 {
       return reply("Stale or mismatched Direct input")
     direct.connectionId = sample.connectionId
     direct.sequence = sample.sequence
-    direct.deadline = sample.capturedAt + DIRECT_INPUT_TTL_MS
+    direct.deadline = Math.min(sample.capturedAt, now) + DIRECT_INPUT_TTL_MS
     direct.motion.target(
       [sample.x, sample.y],
       sample.speedScale,

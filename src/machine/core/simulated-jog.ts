@@ -1,4 +1,8 @@
-import { DIRECT_INPUT_TTL_MS, isFresh } from "../contract/index.ts"
+import {
+  DIRECT_CLOCK_SKEW_MS,
+  DIRECT_INPUT_TTL_MS,
+  isFresh,
+} from "../contract/index.ts"
 import type {
   SimulatedJogSession,
   SimulatedJogSample,
@@ -50,7 +54,7 @@ export class SimulatedJogOwner {
       refusal = "Direct input belongs to another session"
     else if (input.sequence <= this.sequence)
       refusal = `Direct input sequence ${input.sequence} did not advance past ${this.sequence}`
-    else if (input.capturedAt > now)
+    else if (input.capturedAt > now + DIRECT_CLOCK_SKEW_MS)
       refusal = `Direct input timestamp is ${input.capturedAt - now} ms ahead of the machine clock`
     else if (input.capturedAt + DIRECT_INPUT_TTL_MS <= now)
       refusal = `Direct input expired at ${now - input.capturedAt} ms old`
@@ -76,9 +80,10 @@ export class SimulatedJogOwner {
         )
       )
     this.sequence = input.sequence
-    this.expireAt(input.capturedAt + DIRECT_INPUT_TTL_MS)
+    const capturedAt = Math.min(input.capturedAt, now)
+    this.expireAt(capturedAt + DIRECT_INPUT_TTL_MS)
     const promise = this.exchange(
-      { kind: "sample", sample: input },
+      { kind: "sample", sample: { ...input, capturedAt } },
       input.sequence,
       DIRECT_INPUT_TTL_MS
     )
