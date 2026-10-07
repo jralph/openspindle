@@ -115,4 +115,4 @@ Recommended: **Native** — implement in this chat, followed by one independent 
 
 The approved design is the authority for behaviour. This plan adds implementation choices and manual verification steps; it still needs Joseph's review and execution choice before product code changes.
 
-Future mapping preferences recorded after design approval: right stick up/down for Z, right stick left/right for a configured fourth axis, and held modifiers for RPM/feed adjustment. They are deferred from this XY stage. When implemented, rate-adjustment modifiers suppress axis movement; this plan must not pre-bind the right stick or claim fourth-axis support.
+Future mapping preferences recorded after design approval: right stick up/down for Z, right stick left/right for a configured fourth axis, and held modifier + D-pad up/down for RPM/feed adjustment, with the modifier selecting the rate. They are deferred from this XY stage. When implemented, rate-adjustment modifiers suppress axis movement; this plan must not pre-bind the right stick or claim fourth-axis support.
