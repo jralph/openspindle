@@ -8,7 +8,8 @@ import type { SimulatedJogSample } from "../../contract/simulator-jog.ts"
 import type { OutboundFrame } from "../adapter.ts"
 import { FRAME_TYPES } from "./codec.ts"
 
-export const SIMULATOR_SPINDLE_LIMITS = { min: 1000, max: 10000 } as const
+// Z1/Z1 Pro product specifications: 13,000 RPM; Carvera's 15,000 is a different spindle.
+export const SIMULATOR_SPINDLE_LIMITS = { min: 1000, max: 13000 } as const
 
 const CommandSchema = z.discriminatedUnion("kind", [
   z.strictObject({

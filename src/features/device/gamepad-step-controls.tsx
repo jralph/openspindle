@@ -20,12 +20,14 @@ export function GamepadStepControls({
   speed,
   spindleRpm,
   adjustStep,
+  cycleSpeed,
   stop,
 }: {
   step: number
   speed: number
   spindleRpm: number
   adjustStep: (delta: -1 | 1) => void
+  cycleSpeed: () => void
   stop: () => Promise<MachineSnapshot>
 }) {
   const id = useId()
@@ -39,6 +41,7 @@ export function GamepadStepControls({
     speed,
     spindleRpm,
     adjustStep,
+    cycleSpeed,
     stop,
   })
   const selected = input.selected
@@ -145,6 +148,10 @@ export function GamepadStepControls({
         </FieldDescription>
       )}
       <FieldDescription role="status">{input.notice}</FieldDescription>
+      <FieldDescription>
+        Click the left stick to cycle the Jog speed percentage. Each click
+        advances once; holding it does not repeat.
+      </FieldDescription>
       <FieldDescription>
         Hold RB and tap D-pad left/right to decrease/increase the step size.
         Release LB first. This shortcut never jogs.

@@ -17,6 +17,8 @@ Step mode never repeats a held direction. A sent finite step completes its dista
 
 To change step size on the controller, release LB, hold **RB** and tap D-pad left/right. It moves once per press through 0.1, 1, 5 and 10 mm, subject to reported jog limits, without jogging. Release RB and return to neutral before jogging again.
 
+Click the **left thumbstick (L3)** to cycle Jog speed through **5% → 10% → 25% → 5%**, using the same Speed selector in both modes. Each new click advances once, including while Direct steering; holding it does not repeat. A finite Step already sent retains its captured speed; the new setting applies to the next Step. Focus, controller and mode changes require releasing L3 before another click; B and modifier chords consume a simultaneous click without changing speed.
+
 Choose **Simulator preview → Start** to see the bed and tool in 3D, including in an empty project. Drag to orbit; scroll to zoom. The marker follows reported simulator positions. **Camera angle** switches to the fixed simulated camera preset. No camera feed or imported NC file is required. The simulator interprets jog speed as a fraction of the axis maximum and starts jogs immediately.
 
 ## Direct mode
@@ -31,7 +33,7 @@ Controller motion clamps XY to the Z1 fixture kit's configured work envelope and
 
 ## Spindle controls
 
-While armed, hold **X** and wait for motion to stop. Tap **D-pad up/down** to change the shared spindle target by 1,000 RPM, within the adapter's 1,000–10,000 control range. This is an application range, not a machine rating. Changing the target while off leaves the spindle off; while running it applies the speed. The existing Spindle card shows Target, Actual and Requested; its editable target is shared with the controller and reserved while armed.
+While armed, hold **X** and wait for motion to stop. Tap **D-pad up/down** to change the shared spindle target by 1,000 RPM, within the adapter's 1,000–13,000 control range. Makera's [Z1 specifications](https://www.makera.com/products/makera-z1-desktop-cnc) list a 150 W spindle at 0–13,000 RPM; the 15,000 RPM entry in the comparison belongs to Carvera. The app retains its 1,000 RPM minimum for starting. Changing the target while off leaves the spindle off; while running it applies the speed. The existing Spindle card shows Target, Actual and Requested; its editable target is shared with the controller and reserved while armed.
 
 **X + A** starts at the displayed target with both sticks centred, LB released, a cutting tool selected and E-stop released. **X + Y** stops. Each action requires a new press after fresh telemetry confirms rest following the newest suppression request; an early or busy press is refused and must be pressed again. Stop wins conflicting start/stop chords; **B** always takes priority. Motion stays suppressed during spindle verification and requires neutral before re-engaging. Disarming, mode changes, focus/controller loss, input expiry and socket loss stop the owned spindle. Simulator feedback does not measure physical RPM, spin-up/down or cutting.
 
@@ -46,6 +48,8 @@ The firmware's [SerialConsole](https://github.com/MakeraInc/MakeraZ1Firmware/blo
 No dedicated jog-cancel command was identified in these paths. This is source inspection, not a real-machine timing measurement. A simulator cannot validate physical stopping distance, Wi-Fi latency, controller radio loss behaviour or the shipped firmware's exact behaviour.
 
 ## Scope and next decision
+
+Joseph reported the XYZ/spindle build working. Logs from that build show a changed Z position, release-to-zero confirmation, verified spindle start at 7,000 RPM, stop, target changes up to the former app cap, and a focus-loss end confirmed Idle. These observations do not cover every listed fault scenario. The L3 shortcut and corrected 13,000 RPM cap passed typecheck, lint, formatting and production build; hands-on validation of these latest changes remains pending. No automated tests were added or run, following AGENTS.md.
 
 Validation on 2026-10-07: type-checking, lint, formatting and the production build passed. The restarted app reported its simulator listening and connected at 127.0.0.1:2223. The user's screenshot confirmed the GameSir appearing as **Xbox 360 Controller for Windows (STANDARD GAMEPAD)** with standard mapping and a centred stick. The user confirmed the live 3D preview working. Local logs recorded RB step-size changes in both directions, confirmed 5 mm and 10 mm X jogs returning to Idle at the expected positions, refusal of extra gestures while a step was busy, and disarming on focus loss. Earlier logs showed Stop interrupting a command; its final Alarm state still needs an observed trial in this build. Physical-machine motion and stop timing have not been tested. No automated tests were added or run, following the repository's instructions.
 

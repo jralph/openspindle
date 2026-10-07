@@ -13,6 +13,7 @@ type Options = {
   speed: number
   spindleRpm: number
   adjustStep: (delta: -1 | 1) => void
+  cycleSpeed: () => void
   stop: () => Promise<MachineSnapshot>
 }
 
@@ -31,8 +32,10 @@ export function useGamepadStepJog(options: Options) {
   const gesture = useRef(new StepGesture())
   const actionHeld = useRef({ rpm: 0, start: false, stop: false })
   const stepButtonHeld = useRef(false)
+  const speedButtonHeld = useRef(true)
   const disarm = (message = "Controller disarmed", halt = false) => {
     armEpoch.current++
+    speedButtonHeld.current = true
     if (armedRef.current) log.info(`Gamepad: ${message}`)
     armedRef.current = false
     gesture.current.reset()
@@ -76,6 +79,27 @@ export function useGamepadStepJog(options: Options) {
       setNotice("Step size changed")
     }
     stepButtonHeld.current = adjusting
+    if (
+      input?.speedCycleHeld &&
+      !speedButtonHeld.current &&
+      input.supported &&
+      options.simulator &&
+      document.hasFocus() &&
+      !document.hidden &&
+      !input.stopHeld &&
+      !input.spindleModifierHeld &&
+      !input.stepModifierHeld &&
+      !input.dpadHeld
+    ) {
+      options.cycleSpeed()
+      log.info("Gamepad jog-speed cycle requested")
+      setNotice("Jog speed changed")
+    }
+    // Consume blocked/held presses too; releasing another button must not replay a click.
+    speedButtonHeld.current =
+      !document.hasFocus() || document.hidden || !input?.supported
+        ? true
+        : input.speedCycleHeld
     if (!armedRef.current) return
     if (
       !input?.supported ||
@@ -192,6 +216,7 @@ export function useGamepadStepJog(options: Options) {
           xModifier: input.spindleModifierHeld,
           lb: input.enableHeld,
           rb: input.stepModifierHeld,
+          l3: input.speedCycleHeld,
           b: input.stopHeld,
           direction: input.direction,
           neutral: input.neutral,
@@ -243,13 +268,14 @@ export function useGamepadStepJog(options: Options) {
       !input?.neutral ||
       input.enableHeld ||
       input.stepModifierHeld ||
+      input.speedCycleHeld ||
       input.stopHeld ||
       input.spindleModifierHeld ||
       input.startHeld ||
       input.spindleStopHeld
     ) {
       setNotice(
-        "Centre both sticks and release the D-pad, LB, RB, A, B, X and Y before arming"
+        "Centre both sticks and release the D-pad, L3, LB, RB, A, B, X and Y before arming"
       )
       return
     }
@@ -268,6 +294,7 @@ export function useGamepadStepJog(options: Options) {
       !current.neutral ||
       current.enableHeld ||
       current.stepModifierHeld ||
+      current.speedCycleHeld ||
       current.stopHeld ||
       current.spindleModifierHeld ||
       current.startHeld ||

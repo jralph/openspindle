@@ -153,6 +153,12 @@ export function DeviceJogCard({
         step={step}
         speed={speed}
         spindleRpm={spindleRpm}
+        cycleSpeed={() =>
+          setSpeed((current) => {
+            const index = jogSpeeds.indexOf(current)
+            return jogSpeeds[(index + 1) % jogSpeeds.length] ?? current
+          })
+        }
         adjustStep={(delta) =>
           setStep((current) => {
             const index = jogSteps.indexOf(current)

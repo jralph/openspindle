@@ -15,6 +15,7 @@ export type ControllerInput = {
   neutral: boolean
   enableHeld: boolean
   stepModifierHeld: boolean
+  speedCycleHeld: boolean
   stepDelta: -1 | 1 | null
   stopHeld: boolean
   conflicting: boolean
@@ -83,6 +84,7 @@ export function readController(pad: Gamepad): ControllerInput {
       supported && !dpad && Math.hypot(x, y) <= 0.2 && Math.abs(z) <= 0.2,
     enableHeld: pressed(4),
     stepModifierHeld: pressed(5),
+    speedCycleHeld: pressed(10),
     stepDelta,
     stopHeld: pressed(1),
     conflicting,
