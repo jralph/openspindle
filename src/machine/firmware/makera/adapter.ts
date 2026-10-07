@@ -1,3 +1,4 @@
+import { simulatorJogProtocol } from "./simulator-jog.ts"
 import {
   ADDED_ANCHOR_LIMIT,
   ASSIST_KEYS,
@@ -226,6 +227,7 @@ function parseAnnouncement(
 }
 
 export const makeraAdapter: FirmwareAdapter = {
+  simulatorJog: simulatorJogProtocol,
   id: "makera",
   defaultPort: 2222,
   discovery: { port: 3333, parse: parseAnnouncement },

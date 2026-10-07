@@ -8,6 +8,10 @@ import {
   ConnectRequestSchema,
   ConsoleLineSchema,
   SimulatedBedSchema,
+  BeginSimulatedJogRequestSchema,
+  SimulatedJogSessionSchema,
+  SimulatedJogSampleSchema,
+  SimulatedJogReceiptSchema,
   ConsoleEntrySchema,
   DisconnectRequestSchema,
   HeightMapSchema,
@@ -38,6 +42,22 @@ const none = z.undefined()
 
 /** The machine surface the machine process serves to the app renderer and the main process. */
 export const machineMethods = {
+  "machine.beginSimulatedJog": {
+    params: BeginSimulatedJogRequestSchema,
+    result: SimulatedJogSessionSchema,
+    timeoutMs: 10_000,
+  },
+  "machine.sampleSimulatedJog": {
+    params: SimulatedJogSampleSchema,
+    result: SimulatedJogReceiptSchema,
+    timeoutMs: 1000,
+  },
+  "machine.endSimulatedJog": {
+    params: SimulatedJogSessionSchema,
+    result: MachineSnapshotSchema,
+    timeoutMs: 10_000,
+    budget: null,
+  },
   "machine.snapshot": {
     params: none,
     result: MachineSnapshotSchema,

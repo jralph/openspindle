@@ -1,5 +1,19 @@
 import { z } from "zod"
 import {
+  BeginSimulatedJogRequestSchema,
+  SimulatedJogSampleSchema,
+  SimulatedJogSessionSchema,
+} from "../contract/simulator-jog.ts"
+import type {
+  SimulatedJogSession,
+  SimulatedJogReceipt,
+} from "../contract/simulator-jog.ts"
+import { SimulatedJogOwner } from "./simulated-jog.ts"
+import {
+  freshDiagnosticStatus,
+  requireAdmission,
+} from "./operations/context.ts"
+import {
   COMMAND_LABELS,
   ConnectRequestSchema,
   ConsoleLineSchema,
@@ -172,6 +186,13 @@ export class MachineController {
   private session: MachineSession | null = null
   private lastError: string | null = null
   private activity: Foreground | null = null
+  private direct: {
+    owner: SimulatedJogOwner
+    token: SimulatedJogSession
+    activity: Foreground
+    session: MachineSession
+    ending: Promise<MachineSnapshot> | null
+  } | null = null
   private deferred: Deferred[] = []
   /** Each kind's read while it is deferred or running; callers asking meanwhile join it. */
   private readonly reads: {
@@ -444,6 +465,175 @@ export class MachineController {
 
   // ── Commands ───────────────────────────────────────────────────────────
 
+  async beginSimulatedJog(input: unknown): Promise<SimulatedJogSession> {
+    const request = parse(BeginSimulatedJogRequestSchema, input)
+    const session = this.session
+    if (
+      !session?.ready ||
+      !session.device ||
+      !isSimulator(session.device) ||
+      !this.adapter.simulatorJog ||
+      request.connectionId !== this.connectionId(session)
+    )
+      throw new MachineError(
+        "refused",
+        "Connect the local simulator before arming Direct."
+      )
+    const command = {
+      type: "jog",
+      axis: "X",
+      distance: Math.max(
+        this.adapter.limits.jogMinDistance,
+        Math.min(1, this.adapter.limits.jogMaxDistance)
+      ),
+      speedScale: 0.1,
+    } as const
+    this.admitNow({ key: "jog", command })
+    const activity = this.begin("command", "Direct simulator jogging")
+    const context: OperationContext = {
+      session,
+      adapter: this.adapter,
+      clock: this.ports.clock,
+      signal: activity.controller.signal,
+      streaming: () => this.streaming(session.store.telemetry),
+      admit: (admissionRequest, telemetry) =>
+        admit(admissionRequest, {
+          ...this.admissionContext(),
+          activity: null,
+          telemetry,
+          streaming: this.streaming(telemetry),
+        }),
+    }
+    const token = {
+      connectionId: request.connectionId,
+      sessionId: crypto.randomUUID(),
+    }
+    const owner = new SimulatedJogOwner(context, token, (reason) => {
+      this.trace.record("note", reason)
+      this.ports.log?.warn(reason)
+      void this.endSimulatedJog(token).catch(() => {})
+    })
+    const direct = {
+      owner,
+      token,
+      activity,
+      session,
+      ending: null as Promise<MachineSnapshot> | null,
+    }
+    this.direct = direct
+    let beginSent = false
+    try {
+      const telemetry = await freshDiagnosticStatus(
+        context,
+        "Simulator status was not received before Direct arming."
+      )
+      requireAdmission(context, { key: "jog", command }, telemetry)
+      if (
+        telemetry.state !== "Idle" ||
+        telemetry.feed !== 0 ||
+        telemetry.spindleOn !== false
+      )
+        throw new MachineError(
+          "refused",
+          "Direct requires an Idle simulator with the spindle off."
+        )
+      beginSent = true
+      await owner.start()
+      if (this.direct !== direct || activity.controller.signal.aborted)
+        throw cancelled()
+      this.trace.record(
+        "note",
+        `Direct simulator session started: ${token.sessionId}`
+      )
+      return token
+    } catch (error) {
+      if (this.direct === direct) {
+        owner.invalidate()
+        this.direct = null
+        // Once begin might have reached the simulator, closing prevents a late start from owning it.
+        if (beginSent)
+          session.close(message(error, "Direct simulator arming failed."))
+        this.end(activity)
+      }
+      throw error
+    }
+  }
+
+  async sampleSimulatedJog(input: unknown): Promise<SimulatedJogReceipt> {
+    const sample = parse(SimulatedJogSampleSchema, input)
+    const direct = this.direct
+    if (
+      !direct ||
+      sample.sessionId !== direct.token.sessionId ||
+      sample.connectionId !== direct.token.connectionId ||
+      direct.ending
+    )
+      throw new MachineError("refused", "Direct session has ended. Arm again.")
+    try {
+      return await direct.owner.sample(sample)
+    } catch (error) {
+      if (this.direct === direct && !direct.owner.ending)
+        this.failDirect(direct, error)
+      throw error
+    }
+  }
+
+  endSimulatedJog(input: unknown): Promise<MachineSnapshot> {
+    const token = parse(SimulatedJogSessionSchema, input)
+    const direct = this.direct
+    if (
+      !direct ||
+      token.sessionId !== direct.token.sessionId ||
+      token.connectionId !== direct.token.connectionId
+    )
+      return Promise.resolve(this.snapshot())
+    if (direct.ending) return direct.ending
+    direct.ending = direct.owner
+      .end()
+      .then(() => {
+        this.trace.record(
+          "note",
+          `Direct simulator stopped: ${token.sessionId}`
+        )
+        return this.snapshot()
+      })
+      .catch((error: unknown) => {
+        if (this.direct === direct) this.failDirect(direct, error)
+        throw error
+      })
+      .finally(() => {
+        if (this.direct === direct) {
+          this.direct = null
+          this.end(direct.activity)
+        }
+      })
+      .then(() => this.snapshot())
+    return direct.ending
+  }
+
+  private failDirect(
+    direct: NonNullable<MachineController["direct"]>,
+    error: unknown
+  ) {
+    this.trace.record(
+      "note",
+      "Direct simulator outcome is unverified; no motion was retried."
+    )
+    this.invalidateDirect()
+    direct.session.close(
+      `Direct simulator outcome is unverified: ${message(error, "stop failed")}. No motion was retried.`
+    )
+  }
+
+  private invalidateDirect() {
+    const direct = this.direct
+    if (!direct) return
+    direct.owner.invalidate()
+    this.direct = null
+    direct.activity.controller.abort(cancelled())
+    this.end(direct.activity)
+  }
+
   async execute(
     input: unknown,
     signal?: AbortSignal
@@ -504,6 +694,7 @@ export class MachineController {
     const session = this.session
     if (!session?.ready)
       throw new MachineError("not-connected", "Connect a device first.")
+    this.invalidateDirect()
     for (const frame of this.transfer?.cancel() ?? []) session.send(frame)
     this.activity?.controller.abort(
       new MachineError("cancelled", "Interrupted by Stop.")
@@ -862,6 +1053,7 @@ export class MachineController {
   }
 
   dispose() {
+    this.invalidateDirect()
     this.session?.close(null)
     this.discovery.dispose()
     this.camera.dispose()
@@ -891,6 +1083,7 @@ export class MachineController {
 
   private onClosed(session: MachineSession, error: string | null) {
     if (session !== this.session) return
+    this.invalidateDirect()
     this.session = null
     this.lastError = error
     this.lockout = null
