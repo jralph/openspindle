@@ -5,6 +5,7 @@ import { useFixtureLibraryStore } from "@/app/fixtures/fixture-context"
 import { profilePlacement } from "@/app/fixtures/fixture-library-store"
 import { useWorkspaceStore } from "@/app/workspace/workspace-context"
 import type { WorkspaceStore } from "@/app/workspace/store"
+import type { WorkspaceState } from "@/domain/workspace/workspace"
 import { libraryOf, openInLibrary } from "@/domain/workspace/library"
 import { plural } from "@/domain/primitives"
 import { projectWorkspace } from "@/formats/project/document"
@@ -24,6 +25,7 @@ import { addProjectModels } from "./project-models"
 import {
   hasUnsavedChanges,
   markProjectSaved,
+  sameProjectContents,
   startNewProject,
 } from "@/app/workspace/project-session"
 
@@ -51,10 +53,19 @@ export async function applyProject(
   workspace: WorkspaceStore,
   models: ModelStore,
   queryClient: QueryClient,
-  candidate: ProjectCandidate
+  candidate: ProjectCandidate,
+  expected: WorkspaceState = workspace.state
 ) {
+  const ensureUnchanged = () => {
+    if (!sameProjectContents(workspace.state, expected))
+      throw new Error(
+        "The project changed while opening. Open the file again to review replacing those changes."
+      )
+  }
+  ensureUnchanged()
   const notices = await addProjectModels(candidate.document.models, models)
   await queryClient.invalidateQueries({ queryKey: modelKeys.library })
+  ensureUnchanged()
   const opened = openInLibrary(
     projectWorkspace(candidate.document, projectFileName(candidate.fileName)),
     libraryOf(workspace.state)
@@ -148,7 +159,7 @@ export function useOpenProject() {
       if (!candidate) return
       if (hasUnsavedChanges(workspace.state))
         openDialog({ kind: "open-project", candidate })
-      else apply.mutate(candidate)
+      else apply.mutate({ candidate, expected: workspace.state })
     },
     onError: (error) => toast.error(error.message),
   })
@@ -165,8 +176,14 @@ export function useApplyProject() {
   return useMutation({
     mutationKey: [...WORKSPACE_MUTATION, "apply-project"],
     scope: workspaceScope,
-    mutationFn: (candidate: ProjectCandidate) =>
-      applyProject(workspace, host.models, queryClient, candidate),
+    mutationFn: ({
+      candidate,
+      expected,
+    }: {
+      candidate: ProjectCandidate
+      expected: WorkspaceState
+    }) =>
+      applyProject(workspace, host.models, queryClient, candidate, expected),
     onError: (error) => toast.error(error.message),
   })
 }
@@ -182,11 +199,17 @@ export function useStartNewProject() {
   return useMutation({
     mutationKey: [...WORKSPACE_MUTATION, "new-project"],
     scope: workspaceScope,
-    mutationFn: async () =>
-      startNewProject(workspace, profilePlacement(fixtures.state)),
+    mutationFn: async (expected: WorkspaceState) => {
+      if (!sameProjectContents(workspace.state, expected))
+        throw new Error(
+          "The project changed while waiting. Choose New Project again to review replacing those changes."
+        )
+      return startNewProject(workspace, profilePlacement(fixtures.state))
+    },
     onSuccess: (result) => {
       if (!result.ok) toast.error(result.error)
     },
+    onError: (error) => toast.error(error.message),
   })
 }
 
@@ -196,6 +219,6 @@ export function useNewProject() {
   const start = useStartNewProject()
   return () => {
     if (hasUnsavedChanges(workspace.state)) openDialog({ kind: "new-project" })
-    else start.mutate()
+    else start.mutate(workspace.state)
   }
 }

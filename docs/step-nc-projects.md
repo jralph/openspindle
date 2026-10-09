@@ -14,6 +14,8 @@ OpenSpindle starts with a new, empty project every time it opens; a project is k
 
 All plates in a project share one device. The saved `profile` stores that device and its last known anchors and bed setup references, even when the project has no plates. Older files without this field infer it from their first plate; any other plates adopt that device when opened. Opening a project preserves its device choice during an existing connection.
 
+Opening or starting a project checks that the current project still matches the one you chose to replace, including after loading fixture models. Changes made while that action waits stop the replacement and leave the current project intact; repeat Open or New to review them. **Save and open** and **Save and start new** also wait for all current project changes to be saved before replacing it. Selection and separately persisted library edits do not block replacement.
+
 ## Two layers and their versions
 
 A project file has two layers, versioned independently:

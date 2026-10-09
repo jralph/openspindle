@@ -5,6 +5,7 @@ import { PROGRAM_RULES } from "../design-rules/common-rules"
 import { MOVE_RULES } from "../design-rules/move-rules"
 import { Z1_DIAGNOSIS_RULES } from "../fixtures/makera-z1/diagnosis"
 import { Z1_RULES } from "../fixtures/makera-z1/program-rules"
+import { Z1_PROBING_RULES } from "../fixtures/makera-z1/probing-rules"
 import { PLATE_RUN_RULES } from "../plate/run-rules"
 import { WORK_ORIGIN_RULES } from "../plate/work-origin"
 import { PROBING_RUN_RULES } from "../probing/rules"
@@ -27,6 +28,7 @@ export const RULES: readonly AnyRule[] = [
   ...PLATE_RUN_RULES,
   ...WORK_ORIGIN_RULES,
   ...PROBING_RUN_RULES,
+  ...Z1_PROBING_RULES,
   ...TOOL_RULES,
   ...GRID_RULES,
   ...TOUCH_OFF_RULES,

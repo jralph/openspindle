@@ -24,6 +24,7 @@ import {
   RUN_LIMITS,
   RunRequestSchema,
   WriteAnchorsRequestSchema,
+  AnchorConfigurationSchema,
   WriteConfigurationRequestSchema,
   disconnectedSnapshot,
   isJobActive,
@@ -69,7 +70,7 @@ import type {
 import { CameraFeed } from "./camera.ts"
 import type { CameraEvent } from "./camera.ts"
 import { DiscoveryService } from "./discovery.ts"
-import { MachineError, cancelled } from "./errors.ts"
+import { MachineError, abortError, cancelled } from "./errors.ts"
 import type { PartedCompletion } from "./parted-completion.ts"
 import { executeCommand } from "./operations/command.ts"
 import { sendConsoleLine } from "./operations/console.ts"
@@ -97,6 +98,8 @@ import { MachineSession } from "./session.ts"
 import { validSnapshot } from "./valid-snapshot.ts"
 
 const STOP_CONFIRM_MS = 8000
+/** Canceled commands and transfers can still answer after Stop confirms. */
+const STOP_REPLY_DRAIN_MS = 2000
 const MAX_REMEMBERED_RUNS = 128
 /** Reset: the frame leaves before the session closes; the firmware reboots 3 s after it. */
 const RESET_SEND_MS = 300
@@ -416,17 +419,20 @@ export class MachineController {
     if (!session || !device)
       throw new MachineError("not-connected", "Connect a device first.")
     this.admitNow({ key: "reset" })
-    this.trace.record("note", "Reset requested")
-    session.send(this.adapter.restart)
-    const restart = { cancelled: false }
-    this.restart = restart
-    this.publish()
-    await this.delay(RESET_SEND_MS)
-    session.close("The machine is restarting.")
-    void this.reconnectAfterReset(
-      { host: device.host, port: device.port, name: device.name },
-      restart
-    )
+    await this.operate("command", "Reset", async () => {
+      this.trace.record("note", "Reset requested")
+      session.send(this.adapter.restart)
+      const restart = { cancelled: false }
+      this.restart = restart
+      this.publish()
+      await this.delay(RESET_SEND_MS)
+      session.close("The machine is restarting.")
+      if (!restart.cancelled)
+        void this.reconnectAfterReset(
+          { host: device.host, port: device.port, name: device.name },
+          restart
+        )
+    })
     return this.snapshot()
   }
 
@@ -532,6 +538,7 @@ export class MachineController {
     this.direct = direct
     let beginSent = false
     try {
+      await session.waitForDrain(activity.controller.signal)
       const telemetry = await freshDiagnosticStatus(
         context,
         "Simulator status was not received before Direct arming."
@@ -768,6 +775,7 @@ export class MachineController {
     )
     for (const entry of this.deferred.splice(0))
       entry.reject(new MachineError("cancelled", "Cancelled by Stop."))
+    session.drainFor(STOP_REPLY_DRAIN_MS)
     this.tracker?.stopRequested()
     this.trace.record("note", "Stop requested")
     const after = session.store.sequence
@@ -1019,9 +1027,33 @@ export class MachineController {
    */
   async writeAnchors(input: unknown): Promise<WriteAnchorsResult> {
     const request = parse(WriteAnchorsRequestSchema, input)
+    const checkProposal = (session: MachineSession | null) => {
+      if (
+        request.expectedConnectionId !== undefined &&
+        (!session?.ready ||
+          session !== this.session ||
+          this.connectionId(session) !== request.expectedConnectionId)
+      )
+        throw new MachineError(
+          "connection-lost",
+          "The device connection changed. Read its anchors again before saving."
+        )
+      if (
+        request.expectedAnchors !== undefined &&
+        (!this.anchors.value ||
+          JSON.stringify(request.expectedAnchors) !==
+            JSON.stringify(AnchorConfigurationSchema.parse(this.anchors.value)))
+      )
+        throw new MachineError(
+          "refused",
+          "The stored anchors changed. Review them again before saving."
+        )
+    }
+    checkProposal(this.session)
     // The chain refuses the write outright while a program runs; it never waits.
     this.admitNow({ key: "writeAnchors" })
     return this.operate("anchors", "Writing anchors", async (context) => {
+      checkProposal(context.session)
       const progress = { sent: false }
       try {
         const value = await writeAnchorConfiguration(context, request, () => {
@@ -1362,6 +1394,9 @@ export class MachineController {
       throw new MachineError("not-connected", "Connect a device first.")
     const activity = this.begin(kind, label)
     try {
+      await session.waitForDrain(activity.controller.signal)
+      if (activity.controller.signal.aborted)
+        throw abortError(activity.controller.signal)
       return await work({
         session,
         adapter: this.adapter,

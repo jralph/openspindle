@@ -40,6 +40,8 @@ The Job tab previews the selected plate and runs it interactively: the job panel
 
 ## Transaction
 
+An origin operation's card presents a confirmed result and **Save as anchor** only when the inspection report can attribute its contacts to that operation and validates a finished routine. Missing or extra measurements remain unconfirmed. Saving an anchor requires the device that made the measurement: both device writes and bed setup offsets are checked against that frozen device, with a fresh connection and anchor check before saving. A device write is bound to the connection and anchor snapshot reviewed; a read or write that changes that snapshot before admission refuses the proposal.
+
 The unique file `/sd/gcodes/openspindle-<uuid>.nc` (`openspindle-<uuid>-<n>.nc` for each part of a program sent in parts) is uploaded, read back and played once, from the folder where Makera Studio keeps the programs it runs. Data and motion are never retried.
 
 1. **Preflight** — `G28.6` with its acknowledgement (every reported axis homed: unhomed, `play` answers `ERROR:Machine has not been homed` and halts the machine), then a fresh status passing the run rules: Idle, no program, released emergency stop, spindle stopped, milling mode, bed-clean mode reported.
@@ -50,7 +52,7 @@ The unique file `/sd/gcodes/openspindle-<uuid>.nc` (`openspindle-<uuid>-<n>.nc` 
 6. **Tool reset** — the firmware skips `M6 T<n>` when it believes T<n> is already in the spindle: no stop for the tool and no measurement at the tool sensor. So on a machine that changes tools by hand, when the program changes tools before it starts the spindle, `M493.2 T-1` (no tool) is sent and confirmed by a status reporting none. The program's first change, the probe's included, then always stops for the tool to be installed and measures it. Not with an automatic tool changer, which tracks the clamped tool and with none set would pick the new one without dropping the old; not when the program starts the spindle first, since the firmware halts `M3` without a cutting tool. A job that then does not start leaves the machine with no tool, so its next tool change measures again.
 7. **Play** — exactly one `play <path>`, as Makera Studio sends it. On the Z1 the controller has no file access: `play` makes the player ask the ESP32 for the file by a CRC of its name, and once the ESP32 serves it the player answers `File size <bytes>` and streams it. The CRC has 16 bits, so another file on the card can answer to the same name: the size, which comes before player progress, must be the part's. Another size while the part starts fails the job with that reason, and the machine is stopped as by Stop. The ESP32 is not open source; when it does not serve the file, nothing is reported at all. Without `-v` the replies to played lines are discarded, as they are for Makera Studio. The job starts only when status reports player progress (P); a failure line (`Currently printing`, `File name CRC check failed`) refuses the start. An unconfirmed start keeps following the machine and is abandoned as `unverified` after 30 s without progress.
 
-Stop during steps 3–4 cancels the transfer (B5) before halting. Each step has a 10 s deadline and the whole preparation 80 s for each file sent.
+Stop during steps 3–4 cancels the transfer (B5) before halting. Each step has a 10 s deadline and the whole preparation 80 s for each file sent. A new Run waits for any earlier operation's reply drain before its preflight sends a query; Stop remains available during that wait.
 
 ## Completion
 

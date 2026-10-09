@@ -30,12 +30,18 @@ export function useGamepadStepJog(options: Options) {
   const armEpoch = useRef(0)
   const live = useRef<ControllerInput | null>(null)
   const gesture = useRef(new StepGesture())
-  const actionHeld = useRef({ rpm: 0, start: false, stop: false })
-  const stepButtonHeld = useRef(false)
+  const actionHeld = useRef({
+    up: false,
+    down: false,
+    start: false,
+    stop: false,
+  })
+  const stepButtonHeld = useRef({ left: true, right: true })
   const speedButtonHeld = useRef(true)
   const disarm = (message = "Controller disarmed", halt = false) => {
     armEpoch.current++
     speedButtonHeld.current = true
+    stepButtonHeld.current = { left: true, right: true }
     if (armedRef.current) log.info(`Gamepad: ${message}`)
     armedRef.current = false
     gesture.current.reset()
@@ -66,9 +72,12 @@ export function useGamepadStepJog(options: Options) {
     live.current = input
     const delta = input?.stepDelta ?? null
     const adjusting = delta !== null && input?.stopHeld === false
+    const stepPressed =
+      (delta === -1 && !stepButtonHeld.current.left) ||
+      (delta === 1 && !stepButtonHeld.current.right)
     if (
       adjusting &&
-      !stepButtonHeld.current &&
+      stepPressed &&
       input.supported &&
       options.simulator &&
       document.hasFocus() &&
@@ -78,7 +87,11 @@ export function useGamepadStepJog(options: Options) {
       log.info("Gamepad step-size change", { delta })
       setNotice("Step size changed")
     }
-    stepButtonHeld.current = adjusting
+    // Track physical presses even when the chord is blocked or focus is lost.
+    stepButtonHeld.current = {
+      left: input?.dpadLeftHeld ?? false,
+      right: input?.dpadRightHeld ?? false,
+    }
     if (
       input?.speedCycleHeld &&
       !speedButtonHeld.current &&
@@ -125,9 +138,10 @@ export function useGamepadStepJog(options: Options) {
       return
     }
     const held = {
-      rpm: input.rpmDelta ?? 0,
-      start: input.spindleModifierHeld && input.startHeld,
-      stop: input.spindleModifierHeld && input.spindleStopHeld,
+      up: input.dpadUpHeld,
+      down: input.dpadDownHeld,
+      start: input.startHeld,
+      stop: input.spindleStopHeld,
     }
     const previous = actionHeld.current
     actionHeld.current = held
@@ -135,15 +149,16 @@ export function useGamepadStepJog(options: Options) {
     let action: Parameters<typeof direct.action>[0] | null = null
     if (input.spindleModifierHeld && !input.stepModifierHeld) {
       if (held.stop && !previous.stop) action = { kind: "stop" }
-      else if (!held.stop && held.start && !previous.start && !held.rpm) {
+      else if (!held.stop && held.start && !previous.start && !input.rpmDelta) {
         if (input.neutral && !input.enableHeld)
           action = { kind: "start", rpm: options.spindleRpm }
         else setNotice("Centre both sticks and release LB before spindle start")
       } else if (
         !held.stop &&
         !held.start &&
-        held.rpm &&
-        held.rpm !== previous.rpm
+        input.rpmDelta &&
+        ((input.rpmDelta === 1 && !previous.up) ||
+          (input.rpmDelta === -1 && !previous.down))
       ) {
         const limits = snapshot.limits
         if (limits)
@@ -153,7 +168,7 @@ export function useGamepadStepJog(options: Options) {
               limits.spindleRpmMin,
               Math.min(
                 limits.spindleRpmMax,
-                options.spindleRpm + held.rpm * 1000
+                options.spindleRpm + input.rpmDelta * 1000
               )
             ),
           }
@@ -307,7 +322,12 @@ export function useGamepadStepJog(options: Options) {
       )
       return
     }
-    actionHeld.current = { rpm: 0, start: false, stop: false }
+    actionHeld.current = {
+      up: false,
+      down: false,
+      start: false,
+      stop: false,
+    }
     gesture.current.reset()
     gesture.current.take(current)
     armedRef.current = true

@@ -100,6 +100,8 @@ The 3D view draws probing from the NC, as the plate's machine reads it, in any p
 
 ## Checks
 
+On the Z1, an anchored Z surface or Height map using `M495` must come before any origin routine that changes work X or Y (`makera-z1/probing-after-origin`, an error). Its compiled work coordinates would otherwise be shifted by the measured work zero. Moving it earlier or choosing **Probe position** resolves the error; the generic `G38.2` touch and `G32` grid can follow origin probing. The measured work origin remains in effect for later machining.
+
 Errors block Run; warnings inform. A probing operation whose NC cannot be generated shows the error on the operation:
 
 | Code                  | Why                                                                                                                                                                                                                                                                                                                                                                        | Fix                                                 |
