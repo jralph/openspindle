@@ -44,6 +44,7 @@ import type { InspectionReport } from "@/formats/inspection"
 import { useHost } from "@/platform/host-context"
 import { inspectionReport } from "./inspection-report"
 import type { JobSubject, JobView } from "./job-view"
+import { openDialog } from "@/features/shell/dialogs"
 
 const mm = (value: number | null | undefined) =>
   value === null || value === undefined ? "—" : `${value.toFixed(4)} mm`
@@ -425,6 +426,35 @@ export function InspectionReportCard({
           and Height map for surfaces. Run a probing plate to collect results.
         </CardContent>
       )}
+      {report &&
+        view.kind === "ended" &&
+        view.outcome === "completed" &&
+        view.session && (
+          <CardFooter className="flex flex-wrap gap-2">
+            {report.features
+              .filter(
+                (feature) =>
+                  feature.status === "complete" &&
+                  feature.result?.origin.some((value) => value !== null)
+              )
+              .map((feature) => (
+                <Button
+                  key={feature.operationId}
+                  variant="outline"
+                  onClick={() => {
+                    if (view.session)
+                      openDialog({
+                        kind: "measurement-setup",
+                        session: view.session,
+                        feature,
+                      })
+                  }}
+                >
+                  Use {feature.name} in setup
+                </Button>
+              ))}
+          </CardFooter>
+        )}
     </Card>
   )
 }

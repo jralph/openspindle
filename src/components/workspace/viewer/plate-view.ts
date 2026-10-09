@@ -1,4 +1,6 @@
 import * as THREE from "three"
+import type { RemovalGrid } from "@/domain/tools/material-removal"
+import { removalStock } from "./removal-stock"
 import { Line2 } from "three/addons/lines/webgpu/Line2.js"
 import { LineGeometry } from "three/addons/lines/LineGeometry.js"
 import { SeeThroughLineMaterial } from "./see-through-line"
@@ -60,6 +62,7 @@ import { GRID_COLORS } from "./viewer-stage"
 import type { ViewerAssets } from "./viewer-assets"
 
 export type PlatePresentation = PathPresentation & {
+  removal: RemovalGrid | null
   showStock: boolean
   /** The plate's problems with a place on its bed, and the key of the one shown. */
   problems: readonly ViewerProblem[]
@@ -150,6 +153,7 @@ function boxOutline(
 }
 
 const PRESENTATION_EQUALITY: FieldEquality<PlatePresentation> = {
+  removal: Object.is,
   active: Object.is,
   showStock: Object.is,
   showRapids: Object.is,
@@ -340,11 +344,26 @@ function stockEdges(
   return edges
 }
 
-function stockObjects(plate: ViewerPlate): THREE.Object3D[] {
+function stockObjects(
+  plate: ViewerPlate,
+  removal: RemovalGrid | null = null
+): THREE.Object3D[] {
   const { stock } = plate
   const bounds = plateStockBounds(plate)
   if (!stock || !bounds) return []
   const { top, body } = stockFaces(stock)
+  if (removal)
+    return [
+      new THREE.Mesh(
+        removalStock(plate, removal),
+        new THREE.MeshStandardMaterial({
+          color: top.color,
+          metalness: top.metalness,
+          roughness: top.roughness,
+          side: THREE.DoubleSide,
+        })
+      ),
+    ]
   const surface = ({ color, metalness, roughness }: StockFace) =>
     new THREE.MeshStandardMaterial({
       color,
@@ -496,6 +515,7 @@ export class PlateView {
   readonly machineBed: MachineBed
   private current: ViewerPlate
   private presentation: PlatePresentation
+  private drawnRemoval: RemovalGrid | null = null
   private readonly context: PlateViewContext
   private readonly bed = new THREE.Group()
   private readonly fixtures = new THREE.Group()
@@ -737,6 +757,7 @@ export class PlateView {
     this.axes.position.set(...plate.workOrigin)
     this.stock.position.set(0, 0, 0)
     replaceChildren(this.stock, stockObjects(plate))
+    this.drawnRemoval = null
     const anchors = anchorMarkers(plate)
     replaceChildren(
       this.anchors,
@@ -869,6 +890,13 @@ export class PlateView {
 
   private applyPresentation() {
     const { presentation } = this
+    if (presentation.removal !== this.drawnRemoval) {
+      this.drawnRemoval = presentation.removal
+      replaceChildren(
+        this.stock,
+        stockObjects(this.current, presentation.removal)
+      )
+    }
     this.selection.visible = presentation.active
     this.stock.visible = presentation.showStock
     for (const [id, group] of this.fixtureGroups)

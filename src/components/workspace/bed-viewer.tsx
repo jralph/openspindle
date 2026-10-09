@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/tooltip"
 import { useEffect, useRef, useState } from "react"
 import type { FrameSource } from "@/app/job/frame"
+import type { RemovalGrid } from "@/domain/tools/material-removal"
 import { useHost } from "@/platform/host-context"
 import { plateLabel } from "@/domain/plate/plate"
 import type {
@@ -40,6 +41,7 @@ export type {
   PickedPoint,
 } from "./viewer/setup-arranger"
 type Props = {
+  removal?: { readonly plateId: string; readonly grid: RemovalGrid } | null
   plates: ViewerPlate[]
   selectedPlateId: string | null
   onSelectPlate: (id: string) => void
@@ -81,6 +83,7 @@ type Props = {
 }
 
 export function BedViewer({
+  removal,
   plates,
   selectedPlateId,
   onSelectPlate,
@@ -160,6 +163,7 @@ export function BedViewer({
   // Presentation first, so plates added in the same render start in their final state.
   useEffect(() => {
     sceneRef.current?.present({
+      removal,
       selectedPlateId,
       selectedLineRanges,
       hiddenLineRanges,
@@ -172,6 +176,7 @@ export function BedViewer({
       liveTool,
     })
   }, [
+    removal,
     selectedPlateId,
     selectedLineRanges,
     hiddenLineRanges,

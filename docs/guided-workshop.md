@@ -1,0 +1,44 @@
+# Guided workshop
+
+The Prepare toolbar offers Guided setup, Facing wizard and Reusable processes. Creating, editing, calculating, applying measurements, loading a process and previewing stock never command the machine. Run stays on Job. Physical controller and measurement support remain unverified; use the Z1 simulator for these experiments.
+
+## Guided setup
+
+Move between Stock, Workholding, Work zero, Tools and Review. These steps use the existing setup controls; edits immediately change the project and can be undone. Closing the guide keeps them. Stock placement and work zero are in bed millimetres. Work zero must match the CAM origin; choosing it in the model does not probe physical work Z. Modeled fixtures do not confirm actual clamping.
+
+## Facing and cutting data
+
+Create a facing operation on a plate or select an existing Facing operation and choose **Edit facing and cutting data** in its inspector. Rectangles and starting top Z use work coordinates. Removal is below that top; clearance is above it. The raster starts beyond the rectangle along X by the cutter radius plus 1 mm, reverses between rows outside the rectangle, and retracts between depth passes. Leave that entry space clear. Stepover is limited to half the diameter, with at most 20,000 cutting rows across all depth passes.
+
+Choose a library flat end mill or straight flat-ended face mill with known diameter and cutting length. Rounded, tapered or differently sized tips are unsupported. Changing the library diameter requires explicitly applying the new diameter in Facing. The kit checks its spindle range (Z1: 1,000–13,000 RPM), outside-X travel and Y travel against the work envelope, cutting length, and cuts below the modeled stock bottom. Existing design rules provide further checks. These checks do not establish physical work Z or holder/clamp clearance.
+
+No feed or RPM is guessed for a new operation. Load a named tool/material preset and explicitly apply it, or enter cutting data. Chip load is calculated from feed / (RPM × cutting teeth). Once valid parameters are entered, a target chip load from your cutter data can calculate an alternative feed; use **Use calculated feed** to apply it. Save named cutting presets to the chosen tool. These are operator-entered or library values, not automatic material recommendations. Imported Fusion files retain their feeds and speeds.
+
+Facing parameters are saved with the project and regenerate the program when opened. Job's source view shows the compiled program. Preview and review it before Run. Facing does not automatically shrink the stock model.
+
+## Job checks and measurements
+
+Each existing preflight row has **What this checks**, while failures keep their original fixes. All existing Run gates remain in place. A passing software checklist does not establish workholding, installed-tool dimensions or physical work Z.
+
+After a completed inspection Run, completed feature reports offer **Use … in setup**. Choose a target and preview either the measured corner/center as work XY, or Boss center's opposing sides and spans as stock XY. A conversion requires the frozen Run's device-matched anchors from firmware, and an identical anchor snapshot on the target. Unknown or changed frames block application. Changed target data or a dismissed/replaced Run requires a fresh proposal. Simulation data needs an explicit acknowledgement. Applying changes project XY only; absolute Z, stock height and rotation remain entered values. The setup retains an audit of the last application, including Run, feature, source, anchors, applied XY and time; later edits may change the current values. Grid reports stay available for surface analysis and export, rather than being treated as absolute setup height.
+
+## Reusable processes
+
+Save a named snapshot of the selected plate: stock, placement, fixtures, work zero, ordered operations, pause-before choices and referenced tools. Processes persist locally across app launches in a separate versioned document. Loading requires matching device and anchors and creates a new plate with fresh identities. Changed library tools become separate copies; missing definitions stay unassigned. Compiled section selections are cleared when identities change. Custom fixture models remain references to the local Models library. Review actual dimensions, setup and cutting data for each use before Run. Saving errors and unreadable/newer documents use the app's existing recovery flow.
+
+## Material removal
+
+On Job, toggle **Material removal** above the viewer. The stock becomes a sampled 2.5D height field following the playback cursor, including partial moves; backward seeks rebuild it from uncut stock. With no playback cursor it shows the end of the program. Calculation runs in a worker; while it catches up, the display says **Updating sampled stock**. Off-plan live tool positions withhold the result. Toggling off restores the original stock box.
+
+The model supports known straight flat-ended cutters, positive rectangular stock and ordinary three-axis machining. Arcs use the preview's tessellated chords. Probing/height compensation, rotary axes, coordinate-changing operations, non-XY arcs, cutter compensation, unreadable lines and unavailable cutters are reported as unsupported. Stock is sampled at up to 128 intervals on its longest axis, coarsened to fit an 8-million sample-visit budget; at most 50,000 preview segments are accepted. The displayed grid spacing indicates its resolution. Narrow details can vanish, deep cuts clamp at stock bottom, and the model cannot show undercuts, tool/holder collisions or verify physical machining. It does not grant a preflight pass.
+
+## Simulator trial
+
+1. Connect the Z1 simulator, read its anchors and open Guided setup. Enter a small stock rectangle and check all five steps. Close/reopen to confirm edits persist; try Undo.
+2. Choose a known flat cutter with cutting length. Create Facing on stock well inside the bed so the extra X entry fits. Enter reviewed simulator-only RPM/feed/entry feed, shallow removal and clearance, or apply a complete library preset. Edit the operation afterward. Invalid or empty numeric fields must disable Apply; extra-tiny stepover must report the row budget. Change the library diameter and verify generation blocks until the new diameter is applied.
+3. Check calculated chip load and explicitly calculate/apply a new feed. Save a named cutting preset and reopen the wizard to select it. Save and reopen the project; confirm Facing remains editable with the same parameters. Imported G-code must retain its own feed values.
+4. Open Job and inspect the explanations and fixes for its preflight rows. Play Facing without running the machine. Toggle Material removal: rotate the bed, pause partway, scrub forward and backward, and confirm the cut follows the cursor. Toggle off to restore uncut stock. A probing plate or unsupported cutter must explain why removal is unavailable.
+5. Run the existing Boss inspection recipe in simulation, resume its review pauses, and wait for completion. Open its setup proposal, choose a matching target and inspect the before/after XY. Apply only after acknowledging synthetic data. Confirm Z and stock height are unchanged. A mismatched target or edited target must block the old proposal.
+6. Save the Facing plate as a named process. Change one library tool, then load the process: it should create a new plate and separate tool copy, preserving the original library edit and operation order. Restart the app and verify the process still exists. Review the loaded plate before Run.
+
+These trials require interaction with the desktop app and are pending user verification. Static checks and an independent code review are recorded separately.

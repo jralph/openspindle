@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { Z1_SPINDLE_RANGE } from "../../../domain/fixtures/makera-z1/work-envelope.ts"
 import {
   SimulatedJogSampleSchema,
   SimulatedJogReceiptSchema,
@@ -9,7 +10,7 @@ import type { OutboundFrame } from "../adapter.ts"
 import { FRAME_TYPES } from "./codec.ts"
 
 // Z1/Z1 Pro product specifications: 13,000 RPM; Carvera's 15,000 is a different spindle.
-export const SIMULATOR_SPINDLE_LIMITS = { min: 1000, max: 13000 } as const
+export const SIMULATOR_SPINDLE_LIMITS = Z1_SPINDLE_RANGE
 
 const CommandSchema = z.discriminatedUnion("kind", [
   z.strictObject({

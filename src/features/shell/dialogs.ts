@@ -3,9 +3,23 @@ import type { ImportPlan } from "@/app/workspace/import-plan"
 import type { ProjectCandidate } from "@/features/project/use-project"
 import type { SettingsSection } from "@/features/settings/settings-dialog"
 import type { InspectionRecipe } from "@/domain/probing/inspection-recipes"
+import type { InspectionFeature } from "@/domain/probing/metrology"
+import type { JobSession } from "@/features/job/job-session"
 
 /** Every dialog of the workspace. One is open at a time; the dialog host renders it. */
 export type WorkspaceDialog =
+  | { readonly kind: "guided-setup" }
+  | { readonly kind: "processes" }
+  | {
+      readonly kind: "measurement-setup"
+      readonly session: JobSession
+      readonly feature: InspectionFeature
+    }
+  | {
+      readonly kind: "facing"
+      readonly plateId?: string
+      readonly operationId?: string
+    }
   | { readonly kind: "device" }
   | { readonly kind: "device-configuration" }
   /** The Models library; closing it goes back to the dialog it opened from. */

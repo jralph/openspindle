@@ -14,3 +14,6 @@ export function z1WorkBounds(anchor: readonly [number, number]) {
 
 /** Firmware Z soft limits, shared with probing and the controller simulator. */
 export const MACHINE_Z = { min: -102, max: -1 } as const
+
+/** Verified Z1 spindle range; Carvera's 15,000 RPM spindle is a different model. */
+export const Z1_SPINDLE_RANGE = { min: 1000, max: 13000 } as const

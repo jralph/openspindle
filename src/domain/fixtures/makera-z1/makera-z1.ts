@@ -28,7 +28,11 @@ import { g32Grids } from "./wired-probe/grid"
 import { touchPoints } from "./wired-probe/touch-off"
 import { CLEARANCE_Z } from "./wired-probe/travel"
 import { Z1Bed } from "./z1-bed"
-import { Z1_WORK_AREA, Z1_WORK_AREA_ORIGIN } from "./work-envelope"
+import {
+  Z1_WORK_AREA,
+  Z1_WORK_AREA_ORIGIN,
+  Z1_SPINDLE_RANGE,
+} from "./work-envelope"
 
 /** An NC number to four decimals, without exponent notation or −0. */
 const ncNumber = (value: number) => String(Number(value.toFixed(4)) + 0)
@@ -52,6 +56,7 @@ export const LEGACY_BED_FRAME = { anchor1: [12, 12], z: 6 } as const
  * the fixtures Makera makes for it and its anchors.
  */
 export class MakeraZ1 extends FixtureKit {
+  override readonly spindleRange = Z1_SPINDLE_RANGE
   readonly id = MAKERA_Z1_ID
   readonly name = "Makera Z1"
   readonly deviceModels = ["Z1", "Z1 Pro"]

@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { FacingParamsSchema } from "./facing"
 import { utf8ByteLength } from "@/machine/contract"
 import { GridParamsSchema } from "../probing/tasks/grid/params"
 import { OutlineParamsSchema } from "../probing/tasks/outline/params"
@@ -169,6 +170,11 @@ export type ProbingSourceOf<TTask extends ProbingSource["task"]> = Extract<
 >
 
 export const OperationSourceSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("facing"),
+    tool: ToolNumberSchema,
+    params: FacingParamsSchema,
+  }),
   FileSourceSchema,
   PcbSourceSchema,
   UnsupportedSourceSchema,

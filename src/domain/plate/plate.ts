@@ -83,6 +83,22 @@ export const PlateSetupSchema = z
      * snapshot holds after the device's; null or absent for none.
      */
     bedSetupId: EntityIdSchema.nullable().optional(),
+    /** Audit of the last explicit measured-XY application; later edits may change those values. */
+    lastMeasurement: z
+      .object({
+        runId: EntityIdSchema,
+        operationId: EntityIdSchema,
+        deviceId: EntityIdSchema,
+        source: z.enum(["simulator", "physical"]),
+        mode: z.enum(["origin", "stock"]),
+        anchors: StoredAnchorSetupSchema,
+        appliedAt: z.number().finite().nonnegative(),
+        bedXY: z.tuple([z.number().finite(), z.number().finite()]),
+        stockSize: z
+          .tuple([z.number().positive(), z.number().positive()])
+          .nullable(),
+      })
+      .optional(),
   })
   .refine(
     (setup) => !setup.anchors || setup.anchors.deviceId === setup.deviceId,

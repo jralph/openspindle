@@ -1,4 +1,8 @@
 import { DevicePicker } from "@/features/device/device-picker"
+import { GuidedSetup } from "@/features/workshop/guided-setup"
+import { FacingDialog } from "@/features/workshop/facing-dialog"
+import { MeasurementSetup } from "@/features/workshop/measurement-setup"
+import { ProcessDialog } from "@/features/workshop/process-dialog"
 import { DeviceConfigurationDialog } from "@/features/device/device-configuration"
 import { FusionSource } from "@/features/fusion360/fusion-source"
 import { FusionPairingDialog } from "@/features/fusion360/fusion-pairing-dialog"
@@ -30,6 +34,28 @@ import type { WorkspaceDialog } from "./dialogs"
 /** The open workspace dialog; opening another replaces it. */
 function OpenDialog({ dialog }: { dialog: WorkspaceDialog }) {
   switch (dialog.kind) {
+    case "processes":
+      return <ProcessDialog onClose={closeDialog} />
+    case "measurement-setup":
+      return (
+        <MeasurementSetup
+          key={`${dialog.session.runId}-${dialog.feature.operationId}`}
+          session={dialog.session}
+          feature={dialog.feature}
+          onClose={closeDialog}
+        />
+      )
+    case "facing":
+      return (
+        <FacingDialog
+          key={`${dialog.plateId}-${dialog.operationId}`}
+          plateId={dialog.plateId}
+          operationId={dialog.operationId}
+          onClose={closeDialog}
+        />
+      )
+    case "guided-setup":
+      return <GuidedSetup onClose={closeDialog} />
     case "fusion":
       return (
         <AppDialog title="Fusion 360" width="wide" onClose={closeDialog}>

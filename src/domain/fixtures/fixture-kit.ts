@@ -74,6 +74,9 @@ export type MachineAlarm = {
 }
 
 export abstract class FixtureKit {
+  /** Known spindle operating range; absent for a kit that supplies no verified limits. */
+  readonly spindleRange: { readonly min: number; readonly max: number } | null =
+    null
   /** Unique among kits, and never changes: rules name the machines they hold for by it (`Rule.machines`). */
   abstract readonly id: string
   abstract readonly name: string
