@@ -26,7 +26,7 @@
 - [x] 5. Read-only measurement proposal plus explicit guarded workspace apply: frozen anchors and target comparison, XY/spans only, simulation acknowledgement, no absolute Z guess.
 - [x] 6. Process schema/repository/storage key and UI: save snapshot, load cloned identities, restore tool definitions, preserve operations/order, preview before Run.
 - [x] 7. LAST: bounded sampled material-removal preview integrated into Job timeline/viewer; known flat-end tools only, honest unsupported conditions and reset on seek/setup/program changes.
-- [ ] 8. Required checks, one independent review, consequential fixes, documentation, publish and restart app.
+- [x] 8. Required checks, one independent review, consequential fixes, documentation, publish and provide relaunch instructions (save the current project first).
 
 ## Review focus
 

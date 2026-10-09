@@ -126,12 +126,20 @@ function FacingFields({
   onChange: (p: FacingParams) => void
   onValidityChange: (valid: boolean) => void
 }) {
-  const form = useProbingForm(
-    value,
-    FacingParamsSchema,
-    onChange,
-    onValidityChange
-  )
+  // Keep raw drafts, including invalid geometry, when presets replace cutting fields.
+  const schema: z.ZodType<FacingParams, FacingParams> = FacingParamsSchema
+  const form = useForm({
+    defaultValues: value,
+    validators: { onChange: schema },
+    listeners: {
+      onChange: ({ formApi }) => {
+        onValidityChange(
+          FacingParamsSchema.safeParse(formApi.state.values).success
+        )
+        onChange(formApi.state.values)
+      },
+    },
+  })
   const id = useId()
   return (
     <FieldGroup>
@@ -337,11 +345,13 @@ export function FacingDialog({
               setToolId(id)
               setPresetId("")
               const diameter = tools.find((t) => t.id === id)?.diameter ?? 1
-              setParams({
+              const next = {
                 ...params,
                 diameter,
                 stepover: Math.min(params.stepover, diameter / 2),
-              })
+              }
+              setParams(next)
+              setValid(FacingParamsSchema.safeParse(next).success)
             }}
           />
         </Field>

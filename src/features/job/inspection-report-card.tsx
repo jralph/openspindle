@@ -203,6 +203,10 @@ function InspectionResults({ report }: { report: InspectionReport }) {
     onSuccess: (result) => {
       if (result.status === "saved") toast.success("Inspection report saved.")
     },
+    onError: (error) =>
+      toast.error("Inspection report could not be saved.", {
+        description: error.message,
+      }),
   })
   return (
     <>

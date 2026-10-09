@@ -26,6 +26,15 @@ export const ProcessesSchema = z
   )
 export type SavedProcess = z.infer<typeof ProcessSchema>
 
+/** Pending generated sources may refer to a tool before they have NC/table bindings. */
+export function processToolIds(plate: Plate): Set<string | null> {
+  const ids = new Set(plate.tools.map((entry) => entry.toolId))
+  for (const operation of plate.operations)
+    if (operation.source.kind === "pcb" && operation.source.data.toolId)
+      ids.add(operation.source.data.toolId)
+  return ids
+}
+
 /** A separate plate, with tool conflicts copied under fresh IDs rather than overwritten. */
 export function instantiateProcess(
   process: SavedProcess,
@@ -64,6 +73,19 @@ export function instantiateProcess(
         ...operation,
         id: operationIds.get(operation.id)!,
         revision: 0,
+        source:
+          operation.source.kind === "pcb"
+            ? {
+                ...operation.source,
+                data: {
+                  ...operation.source.data,
+                  toolId: ids.get(operation.source.data.toolId) ?? "",
+                  presetId: ids.has(operation.source.data.toolId)
+                    ? operation.source.data.presetId
+                    : "",
+                },
+              }
+            : operation.source,
       })),
       // Named section selections contain compiled IDs; recreated programs get fresh selections.
       groups: [],

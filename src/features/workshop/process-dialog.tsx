@@ -22,6 +22,7 @@ import {
 import {
   instantiateProcess,
   ProcessesSchema,
+  processToolIds,
 } from "@/domain/workspace/processes"
 import { newId } from "@/domain/primitives"
 import { usePersistence, useDocumentState } from "@/persistence/persistence"
@@ -55,7 +56,7 @@ export function ProcessDialog({ onClose }: { onClose: () => void }) {
         throw new Error(
           "Choose a plate and name; resolve storage issues before saving."
         )
-      const referenced = new Set(selected.tools.map((entry) => entry.toolId))
+      const referenced = processToolIds(selected)
       const next = ProcessesSchema.parse([
         ...processes,
         {

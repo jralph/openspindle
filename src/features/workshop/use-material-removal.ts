@@ -12,6 +12,10 @@ import type { JobSubject } from "@/features/job/job-view"
 import type { GCodeProgram } from "@/domain/nc/gcode"
 import type { Tool } from "@/domain/tools/tool"
 import { readNcBlock } from "@/machine/contract"
+import { PLAIN_NC, readNcUnit } from "@/domain/compile/nc-unit"
+import { kitForPlate } from "@/domain/fixtures/catalog"
+import { implicitToolMoves } from "@/domain/tools/implicit-tool"
+import { toViewerPlate } from "@/features/viewer/viewer-plate"
 
 function removalInput(
   shown: JobSubject | null,
@@ -24,6 +28,7 @@ function removalInput(
       problem: "Choose a compiled plate with a motion preview.",
     }
   const { plate } = shown
+  const kit = kitForPlate(plate)
   const stock = plate.setup.stock
   if (!stock)
     return { input: null, problem: "Specify stock dimensions in Guided setup." }
@@ -52,6 +57,14 @@ function removalInput(
       return {
         input: null,
         problem: "Generate the operation's program before previewing removal.",
+      }
+    const supported = readNcUnit(nc, PLAIN_NC, false, (words, state) =>
+      kit.readNcBlock(words, state)
+    )
+    if (!supported.ok)
+      return {
+        input: null,
+        problem: `Removal does not support ${operation.name}, line ${supported.error.line}: ${supported.error.message}`,
       }
     for (const line of nc.split(/\r?\n/)) {
       const block = readNcBlock(line)
@@ -88,7 +101,11 @@ function removalInput(
     min[2] + stock.height,
   ]
   const segments: RemovalInput["segments"] = []
-  for (const segment of program.segments) {
+  const implicitMoves = implicitToolMoves(
+    program,
+    toViewerPlate(plate, shown.compiled, tools).tools
+  )
+  for (const [move, segment] of program.segments.entries()) {
     let radius: number | null = null
     if (
       !segment.rapid &&
@@ -101,7 +118,8 @@ function removalInput(
           problem:
             "A probing or machine-coordinate feed enters the modeled stock.",
         }
-      const number = segment.tool < 0 ? null : segment.tool
+      const number =
+        move < implicitMoves || segment.tool < 0 ? null : segment.tool
       const toolId = plate.tools.find(
         (entry) => entry.number === number
       )?.toolId
