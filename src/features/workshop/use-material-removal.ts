@@ -219,11 +219,13 @@ export function useMaterialRemoval(
       first = false
     }
     const update = () => {
+      if (stopped) return
       const frame = frames.get()
       if (frame && frame.index.plan !== index.plan) return
       if (frame?.offPlan) {
         offPlan = true
-        sent = null
+        // Keep the busy request's cursor so its reply can still be checked after a seek.
+        if (!busy) sent = null
         wanted = { move: 0, fraction: 0 }
         setState({
           input,
@@ -261,7 +263,10 @@ export function useMaterialRemoval(
       ) => {
         if (stopped || event.data.id !== serial) return
         busy = false
-        if (offPlan) return
+        if (offPlan) {
+          sent = null
+          return
+        }
         if (event.data.error) {
           stopped = true
           setState({

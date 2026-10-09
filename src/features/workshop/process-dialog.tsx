@@ -25,6 +25,7 @@ import {
   processToolIds,
 } from "@/domain/workspace/processes"
 import { newId } from "@/domain/primitives"
+import { sameAnchorFrame } from "@/domain/anchors/stored-anchors"
 import { usePersistence, useDocumentState } from "@/persistence/persistence"
 import { AppDialog } from "@/features/shell/app-dialog"
 import { usePrepareSelection } from "@/features/prepare/plate-tree/use-prepare-selection"
@@ -95,8 +96,10 @@ export function ProcessDialog({ onClose }: { onClose: () => void }) {
   const mismatch =
     !!process &&
     (process.plate.setup.deviceId !== profile.deviceId ||
-      JSON.stringify(process.plate.setup.anchors) !==
-        JSON.stringify(selected?.setup.anchors ?? profile.anchors))
+      !sameAnchorFrame(
+        process.plate.setup.anchors,
+        selected?.setup.anchors ?? profile.anchors
+      ))
   const load = () => {
     if (!process || mismatch || stored.phase !== "ready") return
     const next = instantiateProcess(process, workspace.state.tools)
@@ -244,9 +247,9 @@ export function ProcessDialog({ onClose }: { onClose: () => void }) {
         )}
         {mismatch && (
           <FieldDescription>
-            This process was saved with another device or anchor snapshot.
-            Select its original device and matching setup before loading;
-            coordinates are not silently transferred.
+            This process was saved with another device or anchor frame. Select
+            its original device and matching setup before loading; coordinates
+            are not silently transferred.
           </FieldDescription>
         )}
       </FieldGroup>

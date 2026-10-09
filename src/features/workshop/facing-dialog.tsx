@@ -192,7 +192,9 @@ export function FacingDialog({
       operation?.tools.find((binding) => binding.local === source?.tool)?.plate
   )?.toolId
   const [toolId, setToolId] = useState(
-    existingToolId ?? tools.find((tool) => !facingToolIssue(tool))?.id ?? ""
+    operationId !== undefined
+      ? (existingToolId ?? "")
+      : (tools.find((tool) => !facingToolIssue(tool))?.id ?? "")
   )
   const tool = tools.find((item) => item.id === toolId)
   const [params, setParams] = useState<FacingParams>(() => {
@@ -357,7 +359,10 @@ export function FacingDialog({
         </Field>
         {issue && (
           <FieldDescription>
-            {issue} Edit the tool library before continuing.
+            {issue}{" "}
+            {operation
+              ? "Assign a suitable cutter in the plate's tool table before editing Facing."
+              : "Edit the tool library before continuing."}
           </FieldDescription>
         )}
         {tool && tool.diameter !== params.diameter && (
@@ -408,8 +413,14 @@ export function FacingDialog({
               rpm: preset.rpm ?? 0,
               feed: preset.feedRate ?? 0,
               plunge: preset.plungeFeed ?? 0,
-              stepdown: preset.stepdown ?? params.stepdown,
-              stepover: preset.stepover ?? params.stepover,
+              stepdown:
+                preset.useStepdown === true
+                  ? (preset.stepdown ?? params.stepdown)
+                  : params.stepdown,
+              stepover:
+                preset.useStepover === true
+                  ? (preset.stepover ?? params.stepover)
+                  : params.stepover,
             }
             setValid(FacingParamsSchema.safeParse(next).success)
             setParams(next)

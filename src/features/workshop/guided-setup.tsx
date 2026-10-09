@@ -11,6 +11,7 @@ import {
 } from "@/app/workspace/workspace-context"
 import { targetPlate } from "@/app/workspace/defaults"
 import type { PlateSetup } from "@/domain/plate/plate"
+import { touchesOffWorkZ } from "@/domain/plate/work-origin"
 import { useImportContext } from "@/features/shell/use-import"
 import { AppDialog } from "@/features/shell/app-dialog"
 import { openDialog } from "@/features/shell/dialogs"
@@ -99,6 +100,10 @@ export function GuidedSetup({ onClose }: { onClose: () => void }) {
     if (!result.ok) toast.error(result.error)
   }
   const stock = plate.setup.stock
+  const zLock =
+    stock && touchesOffWorkZ(plate)
+      ? "Touch-off sets work Z0 on the stock top."
+      : undefined
   return (
     <AppDialog
       title="Guided setup"
@@ -158,7 +163,11 @@ export function GuidedSetup({ onClose }: { onClose: () => void }) {
         {current.id === "workholding" && <PlateFixturesPanel plate={plate} />}
         {current.id === "origin" && (
           <>
-            <WorkOriginFields setup={plate.setup} onChange={change} />
+            <WorkOriginFields
+              setup={plate.setup}
+              onChange={change}
+              zLock={zLock}
+            />
             <Button
               variant="outline"
               onClick={() => openDialog({ kind: "probing" })}
