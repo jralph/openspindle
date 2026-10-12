@@ -19,7 +19,7 @@ import { Z1Firmware } from "./firmware"
 import { Z1FourthAxis } from "./fourth-axis"
 import { Z1LBracketThick, Z1LBracketThin } from "./l-bracket"
 import { MAKERA_CAM } from "./makera-cam"
-import { Z1MdfBed } from "./mdf-bed"
+import { Z1MdfBed, Z1_MDF_ENTRY_POCKETS } from "./mdf-bed"
 import { Z1MdfWasteboard } from "./mdf-wasteboard"
 import { Z1_GLOSSARY } from "./nc-glossary"
 import { isZ1Park, readZ1Block, z1VacuumSwitch } from "./nc-grammar"
@@ -62,6 +62,7 @@ export const LEGACY_BED_FRAME = { anchor1: [12, 12], z: 6 } as const
  * the fixtures Makera makes for it and its anchors.
  */
 export class MakeraZ1 extends FixtureKit {
+  override readonly facingEntryPockets = Z1_MDF_ENTRY_POCKETS
   /** A conservative square around the modeled setter opening, with 2 mm minimum clearance. */
   override readonly facingKeepOuts: readonly FacingKeepOut[] = [
     {

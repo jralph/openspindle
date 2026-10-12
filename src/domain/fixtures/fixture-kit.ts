@@ -83,6 +83,13 @@ export type FacingKeepOut = {
 }
 
 export abstract class FixtureKit {
+  /** Modeled recesses only: the operator must verify clearance on the installed bed. */
+  readonly facingEntryPockets: readonly {
+    readonly name: string
+    readonly xy: readonly [number, number]
+    readonly diameter: number
+    readonly depth: number
+  }[] = []
   /** Built-in equipment which generated facing passes must avoid, independent of fixture visibility. */
   readonly facingKeepOuts: readonly FacingKeepOut[] = []
   /** Known spindle operating range; absent for a kit that supplies no verified limits. */

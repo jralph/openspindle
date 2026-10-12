@@ -1,6 +1,6 @@
 # Probe inspection
 
-The Job tab's **Inspection report** collects the existing probing operations into a read-only dimensional report. It covers stock or boss spans and location, pocket or bore spans and center distances, and surface mapping. It uses the plate, probe tools and device identity frozen when Run was pressed. Editing the workspace or changing the connection afterwards does not relabel the report. The controller prototype accepts only simulator connections; physical metrology and calibration are unverified.
+The Job tab's **Inspection report** collects the existing probing operations into a read-only dimensional report. It covers stock or boss spans and location, pocket or bore spans and center distances, and surface mapping. It uses the plate, probe tools and device identity frozen when Run was pressed. Editing the workspace or changing the connection afterwards does not relabel the report. Physical Z1 connections use the existing probing adapter; physical metrology and calibration remain unverified.
 
 ## Three experiments
 

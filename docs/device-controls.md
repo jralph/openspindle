@@ -4,6 +4,8 @@ One module owns the machine: `MachineController` in `src/machine/core`, hosted i
 
 ## Admission and availability
 
+Connect device accepts a physical Z1 on the local network (discovery or a manually entered IPv4 address, normally port 2222) and the local simulator. Connection verifies the firmware identity and telemetry; connecting does not jog, home, start the spindle or run a program. Ordinary screen controls and Job Run use the existing physical adapter. The Gamepad prototype's Step and Direct modes require the simulator session extension and remain unavailable on a physical connection. No real-machine trials of this fork's facing or metrology changes have been performed.
+
 Every request passes one admission chain, the command rules (`contract/command-rules.ts`, [rules](workspace-model.md#rules)) that `core/admission.ts` runs, before anything is sent:
 
 1. a verified connection, and no lockout (an earlier outcome that is unknown);

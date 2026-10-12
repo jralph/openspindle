@@ -6,6 +6,8 @@ import type { OperationKind } from "./kinds"
 import {
   facingKeepOuts,
   facingNc,
+  facingPocketPaths,
+  facingEntryFrameIssue,
   facingRaster,
   facingToolIssue,
 } from "./facing"
@@ -62,8 +64,11 @@ export const facingKind: OperationKind<"facing"> = {
       (p.rpm < kit.spindleRange.min || p.rpm > kit.spindleRange.max)
     )
       issue = `Spindle RPM must be ${kit.spindleRange.min}–${kit.spindleRange.max} for ${kit.name}.`
-    const left = p.x - p.diameter / 2 - 1 + plate.setup.workOrigin[0]
-    const right = p.x + p.width + p.diameter / 2 + 1 + plate.setup.workOrigin[0]
+    if (!issue) issue = facingEntryFrameIssue(p, plate.setup)
+    if (!issue) issue = facingPocketPaths(p, keepOuts).issue
+    const raster = facingRaster(p, keepOuts)
+    const left = raster.left + plate.setup.workOrigin[0]
+    const right = raster.right + plate.setup.workOrigin[0]
     const front = p.y + plate.setup.workOrigin[1]
     const back = front + p.depth
     if (
@@ -74,7 +79,7 @@ export const facingKind: OperationKind<"facing"> = {
         back > kit.workAreaOrigin[1] + kit.workArea[1])
     )
       issue =
-        "The raster's outside-X travel or Y travel exceeds the modeled work area. Reduce the rectangle or change its placement."
+        "The cutter-centre travel exceeds the modeled work area. Reduce the rectangle, change its placement or use a cleared-pocket entry."
     const stock = plate.setup.stock
     if (
       !issue &&

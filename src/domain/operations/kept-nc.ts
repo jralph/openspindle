@@ -12,7 +12,12 @@ import type { Plate } from "../plate/plate"
 import { fail, ok } from "../primitives"
 import type { OperationKind, ResolveContext, ResolvedNc } from "./kinds"
 import type { Operation, SourceKind } from "./operation"
-import { facingKeepOuts, facingNc } from "./facing"
+import {
+  facingKeepOuts,
+  facingNc,
+  facingPocketPaths,
+  facingEntryFrameIssue,
+} from "./facing"
 
 const plain = (nc: string): ResolvedNc => ({
   nc,
@@ -106,14 +111,17 @@ export function machiningPrograms(
 ): (string | null)[] {
   const context = keptNcContext(kit)
   return plate.operations.flatMap((operation) => {
-    if (operation.source.kind === "facing")
+    if (operation.source.kind === "facing") {
+      const keepOuts = facingKeepOuts(plate.setup, kit)
+      if (
+        facingEntryFrameIssue(operation.source.params, plate.setup) ||
+        facingPocketPaths(operation.source.params, keepOuts).issue
+      )
+        return [null]
       return [
-        facingNc(
-          operation.source.params,
-          operation.source.tool,
-          facingKeepOuts(plate.setup, kit)
-        ),
+        facingNc(operation.source.params, operation.source.tool, keepOuts),
       ]
+    }
     const kind = keptNcKindOf(operation)
     if (!kind || kind.phase(operation) === "setup") return []
     const resolved = kind.resolve(operation, plate, context)

@@ -4,6 +4,8 @@ import { z } from "zod"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import {
   Field,
   FieldDescription,
@@ -17,8 +19,15 @@ import {
   useWorkspaceStore,
 } from "@/app/workspace/workspace-context"
 import { createOperation } from "@/domain/operations/operation"
-import { FacingParamsSchema, facingToolIssue } from "@/domain/operations/facing"
+import {
+  FacingParamsSchema,
+  facingToolIssue,
+  facingKeepOuts,
+  facingPocketPaths,
+  facingEntryFrameIssue,
+} from "@/domain/operations/facing"
 import type { FacingParams } from "@/domain/operations/facing"
+import type { PlateSetup } from "@/domain/plate/plate"
 import { createPreset } from "@/domain/tools/tool"
 import type { Tool } from "@/domain/tools/tool"
 import { kitForPlate } from "@/domain/fixtures/catalog"
@@ -35,7 +44,11 @@ import { openDialog } from "@/features/shell/dialogs"
 import { usePrepareSelection } from "@/features/prepare/plate-tree/use-prepare-selection"
 
 const FIELDS: {
-  key: keyof FacingParams
+  key: {
+    [K in keyof FacingParams]-?: NonNullable<FacingParams[K]> extends number
+      ? K
+      : never
+  }[keyof FacingParams]
   label: string
   unit: string
   description?: string
@@ -59,11 +72,17 @@ const FIELDS: {
     key: "plunge",
     label: "Entry feed",
     unit: "mm/min",
-    description:
-      "Entry is outside the stock along X; confirm this space is clear.",
+    description: "Vertical feed while entering the verified clear space.",
   },
   { key: "stepdown", label: "Depth per pass", unit: "mm" },
   { key: "stepover", label: "Stepover", unit: "mm" },
+]
+
+const ENTRY_FIELDS: typeof FIELDS = [
+  { key: "entryX", label: "Pocket centre X", unit: "mm" },
+  { key: "entryY", label: "Pocket centre Y", unit: "mm" },
+  { key: "entryDiameter", label: "Measured clear opening", unit: "mm" },
+  { key: "entryDepth", label: "Measured clear depth from top", unit: "mm" },
 ]
 
 function ChipLoadCalculator({
@@ -119,10 +138,12 @@ function ChipLoadCalculator({
 
 function FacingFields({
   value,
+  setup,
   onChange,
   onValidityChange,
 }: {
   value: FacingParams
+  setup: PlateSetup | undefined
   onChange: (p: FacingParams) => void
   onValidityChange: (valid: boolean) => void
 }) {
@@ -143,24 +164,98 @@ function FacingFields({
   const id = useId()
   return (
     <FieldGroup>
-      {FIELDS.map(({ key, label, unit, description }) =>
-        probingField(
-          form,
-          key
-        )((field) => (
-          <MeasurementField
-            key={key}
-            id={`${id}-${key}`}
-            label={label}
-            description={description}
-            unit={unit}
-            value={field.value}
-            errors={field.errors}
-            disabled={false}
-            onBlur={field.onBlur}
-            onValueChange={(v) => field.onChange(v ?? NaN)}
-          />
-        ))
+      <Field>
+        <FieldLabel>Entry method</FieldLabel>
+        <form.Field name="entryMode">
+          {(field) => (
+            <ToggleGroup
+              variant="outline"
+              aria-label="Facing entry method"
+              value={[field.state.value ?? "outside"]}
+              onValueChange={(values) => {
+                const mode = values[0]
+                if (mode !== "outside" && mode !== "pocket") return
+                if (mode === "outside") {
+                  form.setFieldValue("entryX", undefined)
+                  form.setFieldValue("entryY", undefined)
+                  form.setFieldValue("entryDiameter", undefined)
+                  form.setFieldValue("entryDepth", undefined)
+                  form.setFieldValue("entryFrame", undefined)
+                }
+                form.setFieldValue("entryConfirmed", false)
+                field.handleChange(mode)
+              }}
+            >
+              <ToggleGroupItem value="outside">Outside stock</ToggleGroupItem>
+              <ToggleGroupItem value="pocket">Cleared pocket</ToggleGroupItem>
+            </ToggleGroup>
+          )}
+        </form.Field>
+      </Field>
+      {value.entryMode === "pocket" && (
+        <FieldDescription>
+          X/Y and width/depth define the cutter-centre rectangle. The cutter
+          extends beyond it by its radius; corners and the tool-setter patch may
+          remain unfaced. The entire cutter must fit in the pocket before it
+          lowers.
+        </FieldDescription>
+      )}
+      {[...FIELDS, ...(value.entryMode === "pocket" ? ENTRY_FIELDS : [])].map(
+        ({ key, label, unit, description }) =>
+          probingField(
+            form,
+            key
+          )((field) => (
+            <MeasurementField
+              key={key}
+              id={`${id}-${key}`}
+              label={label}
+              description={description}
+              unit={unit}
+              value={field.value ?? null}
+              errors={field.errors}
+              disabled={false}
+              onBlur={field.onBlur}
+              onValueChange={(v) => {
+                if (key.startsWith("entry") || key === "top")
+                  form.setFieldValue("entryConfirmed", false)
+                field.onChange(v ?? NaN)
+              }}
+            />
+          ))
+      )}
+      {value.entryMode === "pocket" && (
+        <form.Field name="entryConfirmed">
+          {(field) => (
+            <Field orientation="horizontal">
+              <Checkbox
+                id={`${id}-entry-confirmed`}
+                checked={
+                  field.state.value === true &&
+                  !!setup &&
+                  !facingEntryFrameIssue(value, setup)
+                }
+                disabled={!setup}
+                onCheckedChange={(checked) => {
+                  if (!setup) return
+                  form.setFieldValue(
+                    "entryFrame",
+                    structuredClone({
+                      deviceId: setup.deviceId,
+                      workOrigin: setup.workOrigin,
+                      anchors: setup.anchors,
+                    })
+                  )
+                  field.handleChange(checked === true)
+                }}
+              />
+              <FieldLabel htmlFor={`${id}-entry-confirmed`}>
+                I checked this pocket's position, opening and clear depth on the
+                installed bed, including screws, pins and metal underneath.
+              </FieldLabel>
+            </Field>
+          )}
+        </form.Field>
       )}
     </FieldGroup>
   )
@@ -237,10 +332,16 @@ export function FacingDialog({
   const issue = facingToolIssue(tool)
   const preset = tool?.presets.find((item) => item.id === presetId)
   const kit = plate ? kitForPlate(plate) : null
+  const pocketIssue =
+    plate && kit
+      ? (facingEntryFrameIssue(params, plate.setup) ??
+        facingPocketPaths(params, facingKeepOuts(plate.setup, kit)).issue)
+      : null
   const guard =
     !plate ||
     issue !== null ||
     !valid ||
+    pocketIssue !== null ||
     (operationId !== undefined && (!source || operation?.revision !== revision))
   const savePreset = () => {
     if (!tool || !valid || !presetName.trim()) return
@@ -319,10 +420,10 @@ export function FacingDialog({
     >
       <FieldGroup>
         <FieldDescription>
-          Creates an editable rectangular raster in work coordinates. Each depth
-          pass enters outside X and retracts before repositioning. Review the
-          generated program and clamp clearances on Job before Run. This does
-          not set physical work Z or change the stock model.
+          Creates an editable rectangular raster in work coordinates. Choose
+          outside-stock entry or a measured clear pocket. Review the generated
+          program and clamp clearances on Job before Run. This does not set
+          physical work Z or change the stock model.
         </FieldDescription>
         {!!kit?.facingKeepOuts.length && (
           <FieldDescription>
@@ -332,8 +433,9 @@ export function FacingDialog({
               .join(", ")}
             , including the cutter radius and at least{" "}
             {Math.max(...kit.facingKeepOuts.map((area) => area.margin))} mm
-            clearance. Protected rows retract and enter from outside X; travel
-            clears the modeled equipment top. The protected patch stays unfaced.
+            clearance. Protected rows retract and re-enter in clear space;
+            travel clears the modeled equipment top. The protected patch stays
+            unfaced.
           </FieldDescription>
         )}
         {!plate && (
@@ -363,6 +465,7 @@ export function FacingDialog({
                 ...params,
                 diameter,
                 stepover: Math.min(params.stepover, diameter / 2),
+                entryConfirmed: false,
               }
               setParams(next)
               setValid(FacingParamsSchema.safeParse(next).success)
@@ -386,6 +489,7 @@ export function FacingDialog({
                 ...params,
                 diameter,
                 stepover: Math.min(params.stepover, diameter / 2),
+                entryConfirmed: false,
               }
               setParams(next)
               setValid(FacingParamsSchema.safeParse(next).success)
@@ -443,9 +547,76 @@ export function FacingDialog({
         <FacingFields
           key={`${toolId}-${draft.key}`}
           value={params}
+          setup={plate?.setup}
           onChange={draft.onChange}
           onValidityChange={setValid}
         />
+        {params.entryMode === "pocket" && kit && plate && (
+          <>
+            <Field>
+              <FieldLabel>Modeled MDF recess · candidate only</FieldLabel>
+              <OptionSelect
+                value=""
+                options={[
+                  {
+                    value: "",
+                    label:
+                      "Choose a recess to inspect, or enter measurements above",
+                  },
+                  ...kit.facingEntryPockets.map((pocket, index) => ({
+                    value: String(index),
+                    label: pocket.name,
+                  })),
+                ]}
+                onValueChange={(value) => {
+                  if (value === "") return
+                  const index = Number(value)
+                  if (
+                    !Number.isInteger(index) ||
+                    index < 0 ||
+                    index >= kit.facingEntryPockets.length
+                  )
+                    return
+                  const pocket = kit.facingEntryPockets[index]
+                  const next = {
+                    ...params,
+                    entryX: pocket.xy[0] - plate.setup.workOrigin[0],
+                    entryY: pocket.xy[1] - plate.setup.workOrigin[1],
+                    entryDiameter: pocket.diameter,
+                    entryDepth: pocket.depth,
+                    entryConfirmed: false,
+                  }
+                  setParams(next)
+                  setValid(false)
+                }}
+              />
+            </Field>
+            <FieldDescription>
+              The STEP model's screw recesses are Ø10 mm × 2 mm deep; the
+              smaller through bore is Ø5.4 mm. Screws can reduce the usable
+              depth. Choosing a candidate fills modeled dimensions; replace them
+              with your measurements.
+            </FieldDescription>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const next = {
+                  ...params,
+                  x: kit.workAreaOrigin[0] - plate.setup.workOrigin[0],
+                  y: kit.workAreaOrigin[1] - plate.setup.workOrigin[1],
+                  width: kit.workArea[0],
+                  depth: kit.workArea[1],
+                  entryConfirmed: false,
+                }
+                setParams(next)
+                setValid(false)
+              }}
+            >
+              Use modeled XY travel as cutter-centre rectangle
+            </Button>
+          </>
+        )}
+        {pocketIssue && <FieldDescription>{pocketIssue}</FieldDescription>}
         <FieldDescription className="font-numeric">
           Diameter: {params.diameter} mm · Chip load:{" "}
           {tool && valid && chipLoad(tool, params) !== null
