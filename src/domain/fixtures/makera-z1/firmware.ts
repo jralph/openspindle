@@ -22,7 +22,13 @@ import type {
 import { ORIGIN_ROUTINE, distanceSigns, routineOf } from "./3d-probe/blocks"
 import { gridSamples } from "./wired-probe/grid"
 import { CLEARANCE_Z } from "./wired-probe/travel"
-import { SETTER_RADIUS, SETTER_TOP, tipBedZ, tipMachineZ } from "./tool-setter"
+import {
+  SETTER_RADIUS,
+  SETTER_TOP,
+  SETTER_XY,
+  tipBedZ,
+  tipMachineZ,
+} from "./tool-setter"
 import { Z1_MOTION } from "./motion"
 
 /**
@@ -42,7 +48,7 @@ const Z1 = {
   /** Where a manual tool change waits, from anchor 1: `toolrack_offset_x` + 132 and `_y`. */
   change: [48.78 + 132, 179.74],
   /** The tool setter, from anchor 1 (`fill_cali_scripts` on the Z1 and Z1 Pro). */
-  setter: [181, 181],
+  setter: SETTER_XY,
   /**
    * `default_seek_rate` and `default_feed_rate`: G0, and G1 before any F. A machine's
    * configuration may set others, which its motion limits hold.

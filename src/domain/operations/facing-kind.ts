@@ -1,8 +1,15 @@
 import { PLAIN_NC } from "../compile/nc-unit"
 import { error, operationSubject } from "../diagnostics"
+import type { QuickFix } from "../diagnostics"
 import { fail, ok } from "../primitives"
 import type { OperationKind } from "./kinds"
-import { facingNc, facingToolIssue } from "./facing"
+import {
+  facingKeepOuts,
+  facingNc,
+  facingRaster,
+  facingToolIssue,
+} from "./facing"
+import { workOriginOnMachine } from "../plate/work-origin"
 
 export const facingKind: OperationKind<"facing"> = {
   kind: "facing",
@@ -19,6 +26,31 @@ export const facingKind: OperationKind<"facing"> = {
     const id = plate.tools.find((entry) => entry.number === number)?.toolId
     const tool = tools.find((candidate) => candidate.id === id)
     let issue = facingToolIssue(tool)
+    let fix: QuickFix = { kind: "edit-operation", operationId: operation.id }
+    const keepOuts = facingKeepOuts(plate.setup, kit)
+    if (!issue && keepOuts.length && !workOriginOnMachine(plate.setup)) {
+      issue =
+        "Place work XY relative to a stored anchor so the automatic facing keep-outs can be located."
+      fix = { kind: "read-anchors" }
+    }
+    const index = plate.operations.findIndex((item) => item.id === operation.id)
+    if (
+      !issue &&
+      keepOuts.length &&
+      plate.operations
+        .slice(0, index)
+        .some(
+          ({ source }) => source.kind === "probing" && source.task === "origin"
+        )
+    )
+      issue =
+        "Move Facing before origin probing, or remove that routine after applying its completed measurement to setup; a measured origin would shift the automatic keep-outs."
+    if (
+      !issue &&
+      !facingRaster(p, keepOuts).rows.some((row) => row.spans.length)
+    )
+      issue =
+        "The entire facing raster is inside a protected area. Move or enlarge the rectangle."
     if (!issue && tool?.diameter !== p.diameter)
       issue =
         "The cutter diameter changed. Reopen Facing and apply its current diameter."
@@ -54,11 +86,11 @@ export const facingKind: OperationKind<"facing"> = {
       return fail(
         error("facing-invalid", `${operation.name}: ${issue}`, {
           subject: operationSubject(operation.id),
-          fix: { kind: "edit-operation", operationId: operation.id },
+          fix,
         })
       )
     return ok({
-      nc: facingNc(p, operation.source.tool),
+      nc: facingNc(p, operation.source.tool, keepOuts),
       policy: PLAIN_NC,
       reviewLines: [],
     })

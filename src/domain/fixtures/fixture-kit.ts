@@ -73,7 +73,18 @@ export type MachineAlarm = {
   readonly clear: "unlock" | "reset" | "power"
 }
 
+/** A protected footprint and its top, in bed coordinates, with a minimum tool clearance. */
+export type FacingKeepOut = {
+  readonly name: string
+  readonly min: readonly [number, number]
+  readonly max: readonly [number, number]
+  readonly top: number
+  readonly margin: number
+}
+
 export abstract class FixtureKit {
+  /** Built-in equipment which generated facing passes must avoid, independent of fixture visibility. */
+  readonly facingKeepOuts: readonly FacingKeepOut[] = []
   /** Known spindle operating range; absent for a kit that supplies no verified limits. */
   readonly spindleRange: { readonly min: number; readonly max: number } | null =
     null

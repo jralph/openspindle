@@ -324,6 +324,18 @@ export function FacingDialog({
           generated program and clamp clearances on Job before Run. This does
           not set physical work Z or change the stock model.
         </FieldDescription>
+        {!!kit?.facingKeepOuts.length && (
+          <FieldDescription>
+            Automatically avoids{" "}
+            {kit.facingKeepOuts
+              .map((area) => area.name.toLowerCase())
+              .join(", ")}
+            , including the cutter radius and at least{" "}
+            {Math.max(...kit.facingKeepOuts.map((area) => area.margin))} mm
+            clearance. Protected rows retract and enter from outside X; travel
+            clears the modeled equipment top. The protected patch stays unfaced.
+          </FieldDescription>
+        )}
         {!plate && (
           <Button
             variant="outline"

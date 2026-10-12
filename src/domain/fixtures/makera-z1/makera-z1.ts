@@ -7,7 +7,12 @@ import type { MachineOrigin } from "../../plate/work-origin"
 import type { MachineProbing } from "../../probing/strategy"
 import { PROBE_3D_TOOL, PROBE_TOOL } from "../../tools/tool-table"
 import { FixtureKit } from "../fixture-kit"
-import type { KitFixture, KitRecolor, MachineCamera } from "../fixture-kit"
+import type {
+  FacingKeepOut,
+  KitFixture,
+  KitRecolor,
+  MachineCamera,
+} from "../fixture-kit"
 import { Z1_ALARMS } from "./alarms"
 import { Z1DowelPin } from "./dowel-pin"
 import { Z1Firmware } from "./firmware"
@@ -28,6 +33,7 @@ import { g32Grids } from "./wired-probe/grid"
 import { touchPoints } from "./wired-probe/touch-off"
 import { CLEARANCE_Z } from "./wired-probe/travel"
 import { Z1Bed } from "./z1-bed"
+import { SETTER_CUTOUT_RADIUS, SETTER_TOP, SETTER_XY } from "./tool-setter"
 import {
   Z1_WORK_AREA,
   Z1_WORK_AREA_ORIGIN,
@@ -56,6 +62,22 @@ export const LEGACY_BED_FRAME = { anchor1: [12, 12], z: 6 } as const
  * the fixtures Makera makes for it and its anchors.
  */
 export class MakeraZ1 extends FixtureKit {
+  /** A conservative square around the modeled setter opening, with 2 mm minimum clearance. */
+  override readonly facingKeepOuts: readonly FacingKeepOut[] = [
+    {
+      name: "Tool setter",
+      min: [
+        SETTER_XY[0] - SETTER_CUTOUT_RADIUS,
+        SETTER_XY[1] - SETTER_CUTOUT_RADIUS,
+      ],
+      max: [
+        SETTER_XY[0] + SETTER_CUTOUT_RADIUS,
+        SETTER_XY[1] + SETTER_CUTOUT_RADIUS,
+      ],
+      top: SETTER_TOP,
+      margin: 2,
+    },
+  ]
   override readonly spindleRange = Z1_SPINDLE_RANGE
   readonly id = MAKERA_Z1_ID
   readonly name = "Makera Z1"
