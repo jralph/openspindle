@@ -102,7 +102,12 @@ function OpenDialog({ dialog }: { dialog: WorkspaceDialog }) {
       return <AddFixtureDialog plateId={dialog.plateId} onClose={closeDialog} />
     case "tools":
       return (
-        <WorkspaceToolLibrary assign={dialog.assign} onClose={closeDialog} />
+        <WorkspaceToolLibrary
+          assign={dialog.assign}
+          onClose={() =>
+            dialog.back ? openDialog(dialog.back) : closeDialog()
+          }
+        />
       )
     case "source":
       return (

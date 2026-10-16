@@ -34,6 +34,7 @@ import { strategyProbes } from "@/features/probing/probe-tools"
 import { ParameterField, probingField } from "@/features/probing/probing-fields"
 import { useProbingForm } from "@/features/probing/probing-form"
 import { AppDialog } from "@/features/shell/app-dialog"
+import { openDialog } from "@/features/shell/dialogs"
 import { CalibrationIllustration } from "./calibration-illustration"
 
 type Draft = {
@@ -95,15 +96,17 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   )
   const strategy = strategyById("inside-corner")!
   const probes = kit.probing
-    ? strategyProbes(strategy, library, kit.probing).filter(
-        (entry) => entry.refused === null
-      )
+    ? strategyProbes(strategy, library, kit.probing)
     : []
   const tool =
     probes.find((entry) => entry.tool.id === draft.toolId)?.tool ??
     (!draft.toolId ? probes.at(0)?.tool : undefined)
   const device = machine.connection.device
   const profile = tool && probeProfile(tool)
+  const conductive = profile?.contact === "conductive"
+  const selectedIssue = probes.find(
+    (entry) => entry.tool.id === tool?.id
+  )?.refused
   const probeNumber = profile && kit.probing?.slot(profile)
   const activeProbe =
     probeNumber !== null &&
@@ -169,6 +172,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   )
     reason =
       "Choose a connected XYZ probe with its own 0.5–3.2 mm tip diameter in the library."
+  if (!reason && selectedIssue) reason = selectedIssue
   if (
     !reason &&
     !references.some((entry) => entry.fixture.id === draft.fixtureId)
@@ -353,7 +357,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
                 value={tool?.id ?? ""}
                 options={probes.map(({ tool: probe }) => ({
                   value: probe.id,
-                  label: probe.name,
+                  label: `${probe.name}${probe.probe?.contact === "conductive" ? " · conductive rod" : ""}`,
                 }))}
                 onValueChange={(toolId) => {
                   update({ toolId })
@@ -361,6 +365,35 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
                 }}
               />
             </Field>
+            <Button
+              variant="outline"
+              onClick={() =>
+                openDialog({
+                  kind: "tools",
+                  back: { kind: "anchor-calibration" },
+                })
+              }
+            >
+              Open tool library
+            </Button>
+            <FieldDescription>
+              For a conductive rod, save its own XYZ probe entry from the Makera
+              catalog, with Contact method set to Conductive rod and its actual
+              contact diameter. The catalog leaves that diameter unknown until
+              entered; do not copy the ruby ball diameter. Tool-setter detection
+              measures the fitted length.
+            </FieldDescription>
+            {conductive && (
+              <Alert>
+                <AlertDescription>
+                  Disconnect the wired Z probe and connect the conductive rod's
+                  cable. The bracket top and both inner faces must conduct to
+                  the aluminium table through the pins, screws or another
+                  conductive connection. Coatings can insulate them. Verify each
+                  contacted face before proceeding.
+                </AlertDescription>
+              </Alert>
+            )}
             <p>
               Secure and clean the bracket in its normal pinned position. Fit
               the selected, undamaged probe. Use the actual tip's library entry
@@ -453,6 +486,16 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
               observe all three states. A tool-setter measurement or LED alone
               does not count.
             </p>
+            {conductive && (
+              <FieldDescription>
+                Use a loose conductive contact connected to the actual bracket
+                to touch the stationary rod for the triggered reading, then
+                remove it for the released reading. Do not push or bend the
+                rigid rod and do not jog into the bracket to test the signal.
+                Remove loose leads and contacts from the travel area before
+                preparing the job.
+              </FieldDescription>
+            )}
             <FieldDescription>
               Live check: {check?.phase ?? "not started"}. Moving, changing
               tools or reconnecting requires a new check. A completed check
@@ -516,6 +559,8 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
                 The same measured probe remains fitted and connected, it is over
                 the solid bracket top, the search limits match the clearances,
                 and the pocket and complete travel are clear.
+                {conductive &&
+                  " The bracket top and both inner faces have verified electrical contact to the table, and loose checking leads have been removed."}
               </FieldLabel>
             </Field>
           </>

@@ -45,6 +45,7 @@ export type WorkspaceDialog =
   | { readonly kind: "add-fixture"; readonly plateId: string }
   | {
       readonly kind: "tools"
+      readonly back?: WorkspaceDialog
       /** Assigning a plate's tool table entry; the library is only managed otherwise. */
       readonly assign?: {
         readonly plateId: string

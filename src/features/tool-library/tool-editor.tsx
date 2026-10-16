@@ -97,6 +97,11 @@ const TOUCHES_HINT =
   "What the stylus senses: touches along Z only, or in X, Y and Z, as a 3D touch probe does."
 const POINTER_HINT =
   "Whether the probe carries a laser pointer, which traces without touching."
+const PROBE_CONTACTS: readonly Choice<NonNullable<ProbeProfile["contact"]>>[] =
+  [
+    { value: "mechanical", label: "Mechanical touch" },
+    { value: "conductive", label: "Conductive rod" },
+  ]
 const EMPTY_SEGMENT: ToolSegment = {
   height: null,
   upperDiameter: null,
@@ -226,6 +231,15 @@ function GeneralSection({ form, source }: SectionProps) {
                         hint={POINTER_HINT}
                         choices={YES_NO}
                         required
+                      />
+                    )}
+                  </form.AppField>
+                  <form.AppField name="probe.contact">
+                    {(field) => (
+                      <field.ChoiceField
+                        label="Contact method"
+                        hint="Conductive rods require an electrical path through the contacted reference to the machine table."
+                        choices={PROBE_CONTACTS}
                       />
                     )}
                   </form.AppField>
