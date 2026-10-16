@@ -35,6 +35,7 @@ import { CLEARANCE_Z } from "./wired-probe/travel"
 import { Z1Bed } from "./z1-bed"
 import { boundedDiameterNc } from "./bounded-diameter"
 import { boundedZNc, zProbeMeasurementNc } from "./bounded-z"
+import { boundedMoveNc } from "./bounded-move"
 import { boundedAnchorNc, anchorMeasurementNc } from "./bounded-anchor"
 import { SETTER_CUTOUT_RADIUS, SETTER_TOP, SETTER_XY } from "./tool-setter"
 import {
@@ -65,6 +66,10 @@ export const LEGACY_BED_FRAME = { anchor1: [12, 12], z: 6 } as const
  * the fixtures Makera makes for it and its anchors.
  */
 export class MakeraZ1 extends FixtureKit {
+  override readonly probePositioning = {
+    clearance: CLEARANCE_Z,
+    boundedNc: boundedMoveNc,
+  }
   override readonly zProbing = {
     tools: [PROBE_TOOL, PROBE_3D_TOOL],
     boundedNc: boundedZNc,

@@ -44,6 +44,11 @@ import { useCalibrationRun } from "./use-calibration-run"
 import { CalibrationRunPanel } from "./calibration-run-panel"
 import { zProbeRun } from "./z-probe-run"
 import { ProbeSafetyNotice } from "@/features/probing/probe-safety-notice"
+import type { PointIntent } from "@/features/prepare/point-intent"
+import {
+  pointFrameIssue,
+  pointMachineXY,
+} from "@/features/prepare/point-positioning"
 
 type Draft = {
   step: number
@@ -52,6 +57,7 @@ type Draft = {
   signalTool: string
   settings: ZProbeSettings
   job?: ZProbeJob
+  point?: PointIntent
 }
 const draftAtom = createAtom<Draft>({
   step: 0,
@@ -70,8 +76,8 @@ function probeLabel(profile: ReturnType<typeof probeProfile>) {
 }
 
 /** Entry points preserve an active temporary run but start a new intent explicitly. */
-export function openZProbe(job?: ZProbeJob) {
-  update({ step: 0, signalId: "", signalTool: "", job })
+export function openZProbe(job?: ZProbeJob, point?: PointIntent) {
+  update({ step: 0, signalId: "", signalTool: "", job, point })
   openDialog({ kind: "z-probe" })
 }
 
@@ -85,7 +91,8 @@ export function ZProbeDialog({
   const id = useId()
   const draft = useSelector(draftAtom)
   useEffect(() => {
-    if (job) update({ job, step: 0, signalId: "", signalTool: "" })
+    if (job)
+      update({ job, point: undefined, step: 0, signalId: "", signalTool: "" })
   }, [job])
   const workspace = useWorkspace((value) => value)
   const workspaceStore = useWorkspaceStore()
@@ -153,7 +160,14 @@ export function ZProbeDialog({
       held.stage
     )
   }, [inputKey, kit])
-  const runner = useCalibrationRun(candidate, tool?.id ?? null, "z")
+  const intentKey = JSON.stringify({ job: draft.job, point: draft.point })
+  const runner = useCalibrationRun(
+    candidate,
+    tool?.id ?? null,
+    "z",
+    undefined,
+    intentKey
+  )
   const owned = runner.record
   const status = machine.telemetry
   const measured =
@@ -175,6 +189,26 @@ export function ZProbeDialog({
     reason = "Connect the project's machine first."
   else if (!tool)
     reason = "Add a Z or XYZ probe to the tool library, then select it here."
+  const pickedXY = draft.point && pointMachineXY(draft.point)
+  if (!reason && draft.point) {
+    reason = pointFrameIssue(
+      draft.point,
+      workspace.plates.find((plate) => plate.id === draft.point!.plateId),
+      machine
+    )
+    if (
+      !reason &&
+      draft.step === 1 &&
+      (!pickedXY ||
+        !status?.machine ||
+        Math.hypot(
+          status.machine.x - pickedXY[0],
+          status.machine.y - pickedXY[1]
+        ) > 1)
+    )
+      reason =
+        "Manually position within 1 mm of the picked XY before probing Z. Use the Device controls or the reviewed Jog to X / Y guide."
+  }
   if (!reason && draft.job) {
     const target = workspace.plates.find(
       (plate) => plate.id === draft.job!.plateId
@@ -199,7 +233,7 @@ export function ZProbeDialog({
     !owned.cancelled
   const finish = useMutation({
     mutationFn: async () => {
-      if (!completed || !tool || reason)
+      if (!completed || !tool || reason || owned.intentKey !== intentKey)
         throw new Error(reason ?? "Complete a verified Z probe run first.")
       const fresh = await host.snapshot()
       const currentWorkspace = workspaceStore.state
@@ -362,6 +396,14 @@ export function ZProbeDialog({
         {!owned && draft.step === 1 && (
           <>
             <ProbeSafetyNotice />
+            {draft.point && pickedXY && (
+              <FieldDescription className="font-numeric">
+                Picked model surface Z {draft.point.position[2].toFixed(3)} mm;
+                manually position at machine X {pickedXY[0].toFixed(3)}, Y{" "}
+                {pickedXY[1].toFixed(3)} mm. The actual surface height comes
+                from the contacts.
+              </FieldDescription>
+            )}
             <p>
               Using Device controls, position the tip above a solid, clear point
               on the part's top, roughly 5 mm above it. Keep away from holes,

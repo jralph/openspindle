@@ -6,6 +6,7 @@ import type { InspectionRecipe } from "@/domain/probing/inspection-recipes"
 import type { InspectionFeature } from "@/domain/probing/metrology"
 import type { JobSession } from "@/features/job/job-session"
 import type { ZProbeJob } from "@/features/job/z-probe-job"
+import type { PointIntent } from "@/features/prepare/point-intent"
 
 /** Every dialog of the workspace. One is open at a time; the dialog host renders it. */
 export type WorkspaceDialog =
@@ -25,6 +26,7 @@ export type WorkspaceDialog =
   | { readonly kind: "anchor-calibration" }
   | { readonly kind: "z-probe"; readonly job?: ZProbeJob }
   | { readonly kind: "probe-diameter-calibration" }
+  | { readonly kind: "point-actions"; readonly intent: PointIntent }
   | { readonly kind: "device-configuration" }
   /** The Models library; closing it goes back to the dialog it opened from. */
   | { readonly kind: "models"; readonly back?: WorkspaceDialog }
@@ -90,6 +92,7 @@ export function isGuideDialog(dialog: WorkspaceDialog | null): boolean {
   return [
     "anchor-calibration",
     "z-probe",
+    "point-actions",
     "probe-diameter-calibration",
     "guided-setup",
     "facing",

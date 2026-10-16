@@ -330,6 +330,14 @@ export interface FirmwareAdapter {
   ) => { issue: string | null; probeCheck?: ProbeCheckBinding }
   /** Tools whose contact input is checked at rest; separate from tool-setter calibration. */
   probeCheckTools?: readonly number[]
+  /** Actual enabled, homed soft limits; probing may bypass the firmware's ordinary limit guard. */
+  probeTravelBounds?: {
+    readonly query: string
+    parse: (text: string) => {
+      min: readonly [number, number, number]
+      max: readonly [number, number, number]
+    } | null
+  }
   probeContact?: (
     text: string
   ) => { position: [number, number, number]; success: boolean } | null

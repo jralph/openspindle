@@ -177,12 +177,117 @@ async function releasedStart(context: OperationContext) {
   return input.status
 }
 
+/** G38 bypasses ordinary soft stops on this firmware. Check the whole possible travel ourselves. */
+async function verifyTravelBounds(
+  context: OperationContext,
+  block: NcBlock,
+  before: Telemetry
+) {
+  const query = context.adapter.probeTravelBounds
+  if (!query)
+    throw new MachineError(
+      "refused",
+      "The host cannot verify probe travel limits. No move was sent."
+    )
+  let bounds: ReturnType<typeof query.parse> = null
+  await context.session.request<void>(
+    [context.adapter.consoleLine(query.query)],
+    (event) => {
+      if (event.kind !== "line") return "ignored"
+      if (FAILURE_LINES.has(event.line.kind))
+        return {
+          fail: new MachineError(
+            "rejected",
+            `Probe travel-limit check failed: ${excerpt(event.line.text)}`
+          ),
+        }
+      const found = query.parse(event.line.text)
+      if (
+        (!found && /^Soft endstops are /i.test(event.line.text)) ||
+        /\[PRB:/i.test(event.line.text)
+      )
+        return {
+          fail: new MachineError(
+            "unverified",
+            "Invalid travel limits or unexpected probe contact during the limit check. No move was sent."
+          ),
+        }
+      if (found) {
+        if (bounds)
+          return {
+            fail: new MachineError(
+              "unverified",
+              "Ambiguous probe travel limits. No move was sent."
+            ),
+          }
+        bounds = found
+        return "consumed"
+      }
+      if (event.line.kind === "ack") {
+        const received = bounds
+        if (!received)
+          return {
+            fail: new MachineError(
+              "unverified",
+              "Enabled, homed XYZ travel limits were not reported. No move was sent."
+            ),
+          }
+        const start = xyz(before)
+        const end = [...start]
+        for (const word of block.words) {
+          const axis = ["X", "Y", "Z"].indexOf(word.letter)
+          if (axis >= 0) end[axis] += word.value
+        }
+        if (
+          [start, end].some((point) =>
+            point.some(
+              (value, axis) =>
+                value < received.min[axis] - 0.001 ||
+                value > received.max[axis] + 0.001
+            )
+          )
+        )
+          return {
+            fail: new MachineError(
+              "refused",
+              "The full probe travel would exceed a reported machine limit. Reduce the bound or reposition; no move was sent."
+            ),
+          }
+        return { done: undefined }
+      }
+      return "ignored"
+    },
+    {
+      timeoutMs: 5000,
+      timeoutMessage:
+        "Probe travel limits could not be verified. No move was sent.",
+      signal: context.signal,
+    }
+  )
+  const after = await freshStatus(
+    context,
+    "No fresh status after checking probe travel limits."
+  )
+  requireStationaryProbe(context, after)
+  if (
+    after.toolOffset !== before.toolOffset ||
+    xyz(before).some(
+      (value, axis) => Math.abs(value - xyz(after)[axis]) > POSITION_TOLERANCE
+    )
+  )
+    throw new MachineError(
+      "unverified",
+      "The probe moved or its tool offset changed while checking travel limits. No move was sent."
+    )
+}
+
 /** A successful report must belong to this bounded axis search and agree with stopped MCS. */
 async function verifyContact(
   context: OperationContext,
   block: NcBlock,
   before: Telemetry,
-  contact: readonly number[]
+  contact: readonly number[],
+  requireEndpoint = false
 ) {
   const after = await stationaryProbeStatus(
     context,
@@ -211,6 +316,8 @@ async function verifyContact(
     !contact.every(Number.isFinite) ||
     travel < -POSITION_TOLERANCE ||
     travel > Math.abs(distance) + POSITION_TOLERANCE ||
+    (requireEndpoint &&
+      Math.abs(travel - Math.abs(distance)) > POSITION_TOLERANCE) ||
     contact.some(
       (value, index) =>
         Math.abs(value - end[index]) > POSITION_TOLERANCE ||
@@ -224,7 +331,12 @@ async function verifyContact(
 }
 
 /** Console replies stay observable: played-file G38 replies go to the firmware's null stream. */
-async function step(context: OperationContext, line: string, probing: boolean) {
+async function step(
+  context: OperationContext,
+  line: string,
+  probing: boolean,
+  transit = false
+) {
   const { session, adapter } = context
   let contact: [number, number, number] | null = null
   return session.request<[number, number, number] | null>(
@@ -240,7 +352,14 @@ async function step(context: OperationContext, line: string, probing: boolean) {
         }
       const found = adapter.probeContact?.(event.line.text)
       if (found) {
-        if (!probing || contact || !found.success)
+        if (transit && found.success)
+          return {
+            fail: new MachineError(
+              "rejected",
+              "The probe touched something during positioning. Motion stopped; no following move was sent."
+            ),
+          }
+        if (!probing || contact || found.success === transit)
           return {
             fail: new MachineError(
               "rejected",
@@ -270,7 +389,7 @@ async function step(context: OperationContext, line: string, probing: boolean) {
       return "ignored"
     },
     {
-      timeoutMs: 30000,
+      timeoutMs: transit ? 120000 : 30000,
       timeoutMessage:
         "Bounded probing timed out. No following step was sent and nothing was retried.",
       signal: context.signal,
@@ -304,7 +423,16 @@ export async function runInlineProbe(
         (word) => word.letter === "G" && word.value === 38.2
       )
     ).length
-  if (expectedContacts !== 2 && expectedContacts !== 6)
+  const transit =
+    expectedContacts === 0 &&
+    program.text
+      .split("\n")
+      .some((line) =>
+        readNcBlock(line).words.some(
+          (word) => word.letter === "G" && word.value === 38.3
+        )
+      )
+  if (!transit && expectedContacts !== 2 && expectedContacts !== 6)
     throw new MachineError(
       "refused",
       "Invalid number of protected probe contacts."
@@ -331,7 +459,10 @@ export async function runInlineProbe(
       currentLine = `line ${index + 1}: ${block.code}`
       if (context.signal.aborted) throw context.signal.reason
       const probing = block.words.some(
-        (word) => word.letter === "G" && [38.2, 38.4].includes(word.value)
+        (word) => word.letter === "G" && [38.2, 38.3, 38.4].includes(word.value)
+      )
+      const moving = block.words.some(
+        (word) => word.letter === "G" && word.value === 38.3
       )
       const releasing = block.words.some(
         (word) => word.letter === "G" && word.value === 38.4
@@ -342,9 +473,11 @@ export async function runInlineProbe(
       let before: Telemetry | null = releaseInput?.status ?? null
       if (probing && !releasing) before = await releasedStart(context)
       const skipRelease = releasing && releaseInput?.triggered === false
+      if (probing && !skipRelease && before)
+        await verifyTravelBounds(context, block, before)
       const contact = skipRelease
         ? null
-        : await step(context, block.code, probing)
+        : await step(context, block.code, probing, moving)
       // G38 is synchronous, and this also drains every queued ordinary move before advancing.
       await step(context, "M400", false)
       if (contact) {
@@ -353,8 +486,8 @@ export async function runInlineProbe(
             "unverified",
             "No verified start for this contact."
           )
-        await verifyContact(context, block, before, contact)
-        if (!releasing) {
+        await verifyContact(context, block, before, contact, moving)
+        if (!releasing && !moving) {
           contacts.contacts.push(contact)
           contacts.line ??= index + 1
           if (contacts.contacts.length > expectedContacts)
@@ -366,7 +499,7 @@ export async function runInlineProbe(
       }
       // A probe-away PRB is a release event, never one of the six measuring
       // contacts. Confirm Open before permitting any ordinary clearance move.
-      if (releasing) await releasedStart(context)
+      if (releasing || moving) await releasedStart(context)
       hooks.update({
         measurements: contacts.contacts.length
           ? [{ ...contacts, contacts: [...contacts.contacts] }]

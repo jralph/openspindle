@@ -41,7 +41,12 @@ import {
 import { changesToolBeforeSpindle, prepareMakeraProgram } from "./dialect.ts"
 import { parseMakeraHeightMap } from "./height-map.ts"
 import { MakeraInterpreter } from "./interpreter.ts"
-import { parseFileSize, parseHomedReport, parseSwitchReport } from "./lines.ts"
+import {
+  parseFileSize,
+  parseHomedReport,
+  parseSwitchReport,
+  parseProbeTravelBounds,
+} from "./lines.ts"
 import { MakeraTransfer } from "./transfer.ts"
 import {
   makeraExecutionIssue,
@@ -284,6 +289,7 @@ export const makeraAdapter: FirmwareAdapter = {
   executionIssue: makeraExecutionIssue,
   assessPhysicalProgram: assessMakeraPhysicalProgram,
   probeCheckTools: [0, 9999],
+  probeTravelBounds: { query: "M211", parse: parseProbeTravelBounds },
   probeContact: (text) => {
     const match =
       /^\[PRB:([+-]?[\d.]+),([+-]?[\d.]+),([+-]?[\d.]+):([01])\]$/.exec(

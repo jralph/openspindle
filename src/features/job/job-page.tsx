@@ -21,7 +21,11 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { DeviceCard } from "@/features/prepare/sidebar-header"
 import { MachineDiagnosis } from "@/features/device/machine-diagnosis"
-import { useCalibrationRunRecord } from "@/features/device/use-calibration-run"
+import {
+  useCalibrationRunRecord,
+  calibrationRunDialog,
+  calibrationRunLabel,
+} from "@/features/device/use-calibration-run"
 import { Button } from "@/components/ui/button"
 import { openDialog, useOpenDialog } from "@/features/shell/dialogs"
 import { MachineConsole } from "./machine-console"
@@ -67,8 +71,7 @@ function JobPanel({
   const calibrationOpen =
     !!calibrationRun &&
     subject?.plate.id === calibrationRun.session.plate.id &&
-    dialog?.kind ===
-      (calibrationRun.guide === "z" ? "z-probe" : "anchor-calibration")
+    dialog?.kind === calibrationRunDialog(calibrationRun).kind
   const runJob = useRunJob()
   const library = useWorkspace((state) => state.tools)
   const checklist = useRunChecklist(
@@ -109,18 +112,9 @@ function JobPanel({
           {calibrationRun && (
             <Button
               variant="outline"
-              onClick={() =>
-                openDialog({
-                  kind:
-                    calibrationRun.guide === "z"
-                      ? "z-probe"
-                      : "anchor-calibration",
-                })
-              }
+              onClick={() => openDialog(calibrationRunDialog(calibrationRun))}
             >
-              {calibrationRun.guide === "z"
-                ? "Continue Z probing"
-                : "Continue Anchor 1 calibration"}
+              {calibrationRunLabel(calibrationRun)}
             </Button>
           )}
           <MachineDiagnosis />

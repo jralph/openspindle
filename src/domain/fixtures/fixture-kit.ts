@@ -1,6 +1,7 @@
 import type {
   NcWord,
   ProbeCheckBinding,
+  ProbeMovePlan,
   ZProbeSettings,
 } from "@/machine/contract"
 import type { FixtureDefinition } from "@/domain/fixtures/definitions"
@@ -89,6 +90,13 @@ export type FacingKeepOut = {
 }
 
 export abstract class FixtureKit {
+  readonly probePositioning: {
+    readonly clearance: number
+    readonly boundedNc: (
+      binding: ProbeCheckBinding,
+      plan: ProbeMovePlan
+    ) => string
+  } | null = null
   readonly zProbing: {
     readonly tools: readonly number[]
     readonly boundedNc: (

@@ -4,6 +4,16 @@ Device's right column includes **Useful tools** directly below **Spindle**. **An
 
 On Job, **Probe part Z before cutting** opens the Z guide at Run, then requires **Continue to cutting** after a verified surface measurement before the normal cutter-change prompt. See [Z surface](touch-off.md) for setup, limits and restrictions.
 
+## Positioning from a picked point
+
+In Prepare, right-click a shown stock, fixture or bed surface and choose **Jog to point**. The resizable right sidebar shows the picked bed coordinates and target machine coordinates. Opening it sends nothing. The selected tool must be a supported library probe, active and measured with its signal cable connected; cutters are refused. Run **Run tool-setter detection** there, or explicitly confirm the existing measurement of the same fitted probe. Reconnection or uncertain state cannot reuse a completed run.
+
+**X / Y · retract Z first** retracts to machine clearance Z −3 (or keeps an already higher Z), then moves X and Y separately at 100% of their configured axis maximum rates. It leaves Z raised. **Z · 5 mm above surface** leaves X/Y fixed, requires the current position within 0.5 mm of the picked XY, and approaches the model surface plus 5 mm at 20% of the configured Z rate. Its model-to-machine height uses the reported work Z origin and fitted tool offset. You must separately confirm that real work Z0 matches the plate's modeled origin; tool measurement alone does not establish that registration.
+
+Before **Run reviewed move**, verify one touch and release through the automatic signal panel and explicitly confirm the tool measurement, model registration, clear travel, closed enclosure, supervision and accepted risks. Model/anchor edits invalidate the target; changed work Z requires reconfirmation. A conductive rod cannot detect insulating obstacles. The model and 5 mm offset do not prove physical clearance or prevent damage from a failed input or stopping distance.
+
+Each leg uses a firmware probe-aware transit (`G38.3`): detected contact stops the move, fails the run and prevents the next leg. A no-contact report must match the entire bounded travel and stationary machine endpoint before continuing. The host checks actual enabled, homed XYZ limits with read-only `M211` before every G38 move, including Anchor 1, diameter and Z contacts: firmware probing bypasses ordinary soft limits. Missing, disabled, malformed or exceeded limits stop execution. No searches, transits or withdrawals are retried. Positioning runs share temporary-run progress, tool prompts and Stop without creating project plates; reopening or navigating cannot restart them. These new transits and live limit checks still require physical verification.
+
 One module owns the machine: `MachineController` in `src/machine/core`, hosted in the machine process, an Electron utility process of its own ([architecture.md](architecture.md#the-machine)). The renderer and the native menu reach it only through a `MachineGateway` for their principal, each over its own port. Requests are the closed `MachineCommand` union (Zod-validated at the RPC boundary and again in the controller), plus Run, reads, writing the stored anchors or firmware configuration, a line typed in the [console](#protocol-trace-and-console) and Stop.
 
 ## Admission and availability

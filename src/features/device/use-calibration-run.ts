@@ -20,10 +20,14 @@ import type { JobSession } from "@/features/job/job-session"
 import { useRunChecklist } from "@/features/job/job-hooks"
 import { useCompiledProgramCheck } from "@/features/job/program-check"
 import { deriveJobView } from "@/features/job/job-view"
+import type { PointIntent } from "@/features/prepare/point-intent"
+import type { WorkspaceDialog } from "@/features/shell/dialogs"
 
 export type CalibrationStage = "setter" | "contacts"
 type CalibrationRun = {
-  guide: "anchor" | "z"
+  guide: "anchor" | "z" | "point"
+  point?: PointIntent
+  intentKey?: string
   session: JobSession
   stage: CalibrationStage
   connectionId: string
@@ -35,6 +39,17 @@ type CalibrationRun = {
 // Survives closing the guide, but is neither a project plate nor a persisted job recipe.
 const runAtom = createAtom<CalibrationRun | null>(null)
 export const useCalibrationRunRecord = () => useSelector(runAtom)
+export function calibrationRunDialog(record: CalibrationRun): WorkspaceDialog {
+  if (record.guide === "point" && record.point)
+    return { kind: "point-actions", intent: record.point }
+  if (record.guide === "z") return { kind: "z-probe" }
+  return { kind: "anchor-calibration" }
+}
+export function calibrationRunLabel(record: CalibrationRun) {
+  if (record.guide === "point") return "Continue probe positioning"
+  if (record.guide === "z") return "Continue Z probing"
+  return "Continue Anchor 1 calibration"
+}
 const update = (runId: string, patch: Partial<CalibrationRun>) =>
   runAtom.set((current) =>
     current?.session.runId === runId ? { ...current, ...patch } : current
@@ -56,7 +71,9 @@ function sameConnection(snapshot: MachineSnapshot, connectionId: string) {
 export function useCalibrationRun(
   candidate: Plate | null,
   selectedToolId: string | null,
-  guide: "anchor" | "z" = "anchor"
+  guide: "anchor" | "z" | "point" = "anchor",
+  point?: PointIntent,
+  intentKey?: string
 ) {
   const host = useMachineHost()
   const snapshot = useMachineSnapshot()
@@ -110,6 +127,8 @@ export function useCalibrationRun(
       )
       runAtom.set(() => ({
         guide,
+        point,
+        intentKey,
         session,
         stage,
         connectionId,
