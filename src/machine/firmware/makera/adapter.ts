@@ -43,6 +43,10 @@ import { parseMakeraHeightMap } from "./height-map.ts"
 import { MakeraInterpreter } from "./interpreter.ts"
 import { parseFileSize, parseHomedReport, parseSwitchReport } from "./lines.ts"
 import { MakeraTransfer } from "./transfer.ts"
+import {
+  makeraExecutionIssue,
+  assessMakeraPhysicalProgram,
+} from "./execution-safety.ts"
 
 const command = (payload: string): OutboundFrame => ({
   type: FRAME_TYPES.command,
@@ -264,6 +268,8 @@ export const makeraAdapter: FirmwareAdapter = {
     overrideMax: 150,
   },
   prepareProgram: prepareMakeraProgram,
+  executionIssue: makeraExecutionIssue,
+  assessPhysicalProgram: assessMakeraPhysicalProgram,
   job: makeraJob,
   configuration: {
     path: MAKERA_CONFIGURATION_PATH,

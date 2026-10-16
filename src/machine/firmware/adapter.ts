@@ -27,6 +27,10 @@ import type {
 
 export type { FirmwareRules, Identity } from "../contract/index.ts"
 
+export type ExecutionContent =
+  | { kind: "console"; source: string }
+  | { kind: "program" | "resume"; program: PreparedProgram | null }
+
 export type InboundFrame = {
   readonly type: number
   readonly payload: Uint8Array
@@ -143,7 +147,15 @@ export function prepareResult(
   source: string
 ): PrepareResult {
   try {
-    return { ok: true, program: adapter.prepareProgram(source) }
+    const program = adapter.prepareProgram(source)
+    return {
+      ok: true,
+      program: {
+        ...program,
+        physicalExecutionIssue:
+          adapter.assessPhysicalProgram?.(source, program) ?? null,
+      },
+    }
   } catch (error) {
     if (!(error instanceof ProgramError)) throw error
     return { ok: false, error: error.message, line: error.line }
@@ -302,6 +314,17 @@ export interface FirmwareAdapter {
   /** The ranges its manual controls accept; commands outside them are refused. */
   readonly limits: ControlLimits
   prepareProgram: (source: string) => PreparedProgram
+  /** Content assessment runs once alongside normalization in the program-preparer worker. */
+  assessPhysicalProgram?: (
+    source: string,
+    program: PreparedProgram
+  ) => string | null
+  /** Constant-time admission for prepared programs; console text is bounded by its contract. */
+  executionIssue?: (
+    input: ExecutionContent & {
+      device: ConnectedDevice | null
+    }
+  ) => string | null
   readonly job: JobProtocol
   /** A fixed firmware configuration file, downloaded and fully verified after a save. */
   readonly configuration?: {

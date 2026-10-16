@@ -12,6 +12,8 @@ The Makera 3D Probe (Makera sells it as the 3D Wired Probe) is in the Makera too
 
 Without a probe the routines can use, the operation generates no NC and shows an error (`probing-probe`) whose fix assigns a tool to T9999: when the plate's table has no T9999 entry or no tool in it, when the tool there is missing from the library, is no probe, is a probe of unknown profile or one that touches along Z only, and when the probe has no diameter or one outside 0.5–10 mm ("Makera 3D Probe in T9999 has no ball diameter: set it in the tool library, or assign another probe."). The Job tab reads a routine's result with the ball of the probe the plate's table held when the job ran; without one it shows no result.
 
+Physical 3D probing is disabled following a probe collision. The calibration guides are limited to simulator practice and pasted-reading calculation; saved/imported programs are also subject to the execution block. See [the quarantine and its limits](probe-calibration.md#physical-probing-disabled). The workflow descriptions below explain the generated NC and simulated preview, not permission to run the cycle on hardware.
+
 ## Strategies
 
 | Strategy       | What it touches                                                                                                                                                                        | Sets                                              | Firmware          |

@@ -79,6 +79,8 @@ export const PreparedProgramSchema = z.object({
   changes: z.array(ProgramChangeSchema),
   /** Total changes; `changes` is capped. */
   changeCount: z.int().nonnegative(),
+  /** Computed by the trusted preparer, never accepted in a Run request. Undefined is unassessed. */
+  physicalExecutionIssue: z.string().nullable().optional(),
   /**
    * The files the program is sent as, in order: one with every line, or parts when it exceeds
    * a file's limits. None from a main process before parts, which sent every line as one.

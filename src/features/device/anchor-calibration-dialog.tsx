@@ -31,6 +31,7 @@ import { useMachineSnapshot } from "@/platform/machine"
 import { strategyProbes } from "@/features/probing/probe-tools"
 import { AppDialog } from "@/features/shell/app-dialog"
 import { CalibrationIllustration } from "./calibration-illustration"
+import { calibrationPreparationIssue } from "./calibration-safety"
 
 export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   const id = useId()
@@ -72,9 +73,9 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
     setStep(next)
     setConfirmedSetup(null)
   }
-  let reason = reference
-    ? null
-    : "This machine has no supported anchor calibration reference."
+  let reason = calibrationPreparationIssue(device)
+  if (!reason && !reference)
+    reason = "This machine has no supported anchor calibration reference."
   if (
     !reason &&
     (!device ||
@@ -166,7 +167,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
       title={`Auto calibrate ${reference?.name ?? "anchor"}`}
       width="wide"
       onClose={onClose}
-      description="Prepare a probing job, Run it from Job, then review and save the measured X/Y. Opening this guide moves nothing."
+      description="Simulator practice only. Physical calibration is disabled following a probe collision. Opening this guide moves nothing."
       footer={
         <div className="flex w-full justify-between gap-2">
           <Button
@@ -254,11 +255,10 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
             </Field>
             <CalibrationIllustration kind="anchor" />
             <p>
-              Home the machine, install and cable the selected probe, and verify
-              that touching it triggers the probe signal. On Run, the program
-              raises to machine clearance, then travels to the stored anchor
-              plus X−5 mm, Y−5 mm, over the solid bracket top at the bottom
-              left. Manual jogging to the start is not required.
+              In the simulator, the program raises to machine clearance, then
+              travels to the stored anchor plus X−5 mm, Y−5 mm, over the solid
+              bracket top at the bottom left. Manual jogging to the start is not
+              required.
             </p>
             <p>
               The cycle touches the top, moves into the pocket, then probes the
@@ -273,17 +273,18 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
         {step === 2 && (
           <>
             <p>
-              On Job, review the preview and checks, then click Run. Confirm the
-              requested 3D probe for tool measurement. The routine replaces the
-              active work X/Y/Z origin.
+              Use Run on Job only with the local simulator. The preview models
+              contact with the bracket; it cannot verify a physical probe signal
+              or prove that the machine will stop on contact. The simulated
+              routine replaces the active work X/Y/Z origin.
             </p>
             <p>
-              After successful completion, choose Save as{" "}
+              After successful simulator completion, choose Save as{" "}
               {reference?.name ?? "anchor"} in the measured result. Review old
-              and new machine X/Y before writing. Other anchors retain their
-              offsets and move with it. Reset and re-home afterward so the
-              firmware's tool setter and tool-change moves use the saved
-              calibration.
+              and new simulated machine X/Y before writing. Other simulated
+              anchors retain their offsets and move with it. Practice this only
+              on the simulator; these results must not be written to the
+              physical machine.
             </p>
             <Field orientation="horizontal">
               <Checkbox
@@ -294,14 +295,14 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
                 }
               />
               <FieldLabel htmlFor={`${id}-confirm`}>
-                I have checked the reference, probe signal and complete travel
-                route.
+                I am using the local simulator and have reviewed the modeled
+                reference and complete travel route.
               </FieldLabel>
             </Field>
           </>
         )}
         {reason && (
-          <Alert>
+          <Alert variant="destructive">
             <AlertDescription>{reason}</AlertDescription>
           </Alert>
         )}

@@ -44,6 +44,7 @@ import { ParameterField, probingField } from "@/features/probing/probing-fields"
 import { useProbingForm } from "@/features/probing/probing-form"
 import { AppDialog } from "@/features/shell/app-dialog"
 import { CalibrationIllustration } from "./calibration-illustration"
+import { calibrationPreparationIssue } from "./calibration-safety"
 
 type ReadingSource = {
   kind: "manual" | "physical" | "simulator"
@@ -127,6 +128,9 @@ export function ProbeDiameterCalibrationDialog({
   const fixtures = useFixtureLibraryStore()
   const library = useWorkspace((state) => state.tools)
   const machine = useMachineSnapshot()
+  const preparationIssue = calibrationPreparationIssue(
+    machine.connection.device
+  )
   const session = useJobSession()
   const host = useHost()
   const navigate = useNavigate()
@@ -200,9 +204,10 @@ export function ProbeDiameterCalibrationDialog({
   }
   const prepare = () =>
     attempt(() => {
+      if (preparationIssue) throw new Error(preparationIssue)
       if (!tool || !kit.probing || !valid || nextIndex < 0 || !confirmed)
         throw new Error(
-          "Choose a probe, check the settings and confirm the physical setup."
+          "Choose a probe, check the settings and confirm the simulator setup."
         )
       const checked = ProbeCalibrationSettingsSchema.safeParse({
         ...draft.settings,
@@ -450,7 +455,7 @@ export function ProbeDiameterCalibrationDialog({
       title="3D probe diameter calibration"
       width="wide"
       onClose={onClose}
-      description="Known-width Boss-X method, based on GabrielMaker's calculator. Preparation moves nothing; Run remains on Job."
+      description="Simulator practice and pasted-reading calculator. Physical probing is disabled following a probe collision. Preparation moves nothing."
       footer={
         <div className="flex w-full flex-wrap justify-between gap-2">
           <Button
@@ -487,6 +492,11 @@ export function ProbeDiameterCalibrationDialog({
       }
     >
       <FieldGroup>
+        {preparationIssue && (
+          <Alert variant="destructive">
+            <AlertDescription>{preparationIssue}</AlertDescription>
+          </Alert>
+        )}
         <FieldDescription>
           Step {draft.step + 1} of 4 · {steps[draft.step]}. Draft readings stay
           while this app is open; export the report to keep the raw data.
@@ -534,11 +544,10 @@ export function ProbeDiameterCalibrationDialog({
               />
             </Field>
             <p>
-              Fit and cable the selected probe, home the machine and verify the
-              probe signal. Position above the boss center, clear of its top.
-              Normal tool-length calibration runs before probing. The routine
-              touches the top, then makes two contacts on each X side and
-              replaces work X/Z zero.
+              For simulator practice, position above the boss center, clear of
+              its top. Normal tool-length calibration runs before probing. The
+              routine touches the top, then makes two contacts on each X side
+              and replaces work X/Z zero.
             </p>
             <ParameterField
               id={`${id}-distance`}
@@ -602,14 +611,15 @@ export function ProbeDiameterCalibrationDialog({
                 onCheckedChange={(value) => setConfirmed(value === true)}
               />
               <FieldLabel htmlFor={`${id}-setup`}>
-                Same probe and reference, centered above the boss; probe signal
-                and travel checked.
+                Simulator practice: same probe and reference, centered above the
+                boss; modeled travel checked.
               </FieldLabel>
             </Field>
             <div className="flex flex-wrap gap-2">
               <Button
                 disabled={
                   !tool ||
+                  !!preparationIssue ||
                   !valid ||
                   nextIndex < 0 ||
                   !confirmed ||

@@ -16,7 +16,7 @@ import type {
 } from "../../firmware/adapter.ts"
 import { MachineError, abortError } from "../errors.ts"
 import { PartedCompletion } from "../parted-completion.ts"
-import { freshStatus, requireAdmission } from "./context.ts"
+import { freshStatus, requireAdmission, requireExecution } from "./context.ts"
 import type { OperationContext } from "./context.ts"
 
 const STEP_MS = 10_000
@@ -115,6 +115,7 @@ export async function prepareAndStart(
   program: PreparedProgram,
   hooks: JobRunnerHooks
 ): Promise<void> {
+  requireExecution(context, { kind: "program", program })
   const { session, adapter, clock } = context
   const job = adapter.job
   const parts = programParts(program)
@@ -190,11 +191,13 @@ export async function prepareAndStart(
 export async function playNextPart(
   context: OperationContext,
   request: RunRequest,
+  program: PreparedProgram,
   bedCleanBefore: boolean | null,
   tracker: PartedCompletion,
   index: number,
   hooks: JobRunnerHooks
 ): Promise<void> {
+  requireExecution(context, { kind: "program", program })
   const { adapter } = context
   const count = tracker.parts.length
   const { scoped, release } = withDeadline(context, PREPARATION_MS)

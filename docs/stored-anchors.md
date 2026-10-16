@@ -1,6 +1,6 @@
 # Stored anchors
 
-Device → Anchors includes an illustrated **Auto calibrate Anchor 1** guide and a **3D probe diameter calibration** guide. They prepare probing jobs for explicit Run and review; see [probe and anchor calibration](probe-calibration.md).
+Device → Anchors includes an illustrated **Auto calibrate Anchor 1** guide and a **3D probe diameter calibration** guide. Their job preparation is simulator-only following a physical probe collision. Physical probing execution is disabled; see [probe and anchor calibration](probe-calibration.md).
 
 Prepare → Setup → **Anchor** places the stock by its front-left bottom corner, and each fixture's **Anchor** in Prepare → Fixtures places the fixture by its origin, the point named beside it ([models.md](models.md#origin)). **Relative to** lists the anchors the plate's machine stores, the first as the bed's origin (**Anchor 1 (bed origin)** on the Z1, [coordinate registration](#coordinate-registration)). Choosing another anchor keeps the point's X and Y relative to it: the fields show and edit offsets from that anchor, Z stays on the bed, and changing the reference leaves the point where it is. The bed origin is bed coordinates, which are offsets from the first anchor. The work origin's **Relative to** works the same way. A machine that stores no anchors shows no **Relative to**. This is a workspace edit: it sends no motion, offset-setting or configuration-writing command.
 

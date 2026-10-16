@@ -56,6 +56,7 @@ import type {
 import { prepareResult } from "../firmware/adapter.ts"
 import type {
   CompletionUpdate,
+  ExecutionContent,
   FirmwareAdapter,
   Line,
   TransferProtocol,
@@ -734,6 +735,8 @@ export class MachineController {
   /** Sends a line typed in the console, admitted like any command; the console shows the reply. */
   async sendConsoleLine(input: unknown): Promise<MachineSnapshot> {
     const line = parse(ConsoleLineSchema, input)
+    const issue = this.executionIssue({ kind: "console", source: line })
+    if (issue) throw new MachineError("refused", issue)
     this.admitNow({ key: "console" })
     await this.operate("command", "Console command", (context) =>
       sendConsoleLine(context, line)
@@ -801,9 +804,27 @@ export class MachineController {
   // ── Jobs ───────────────────────────────────────────────────────────────
 
   /** The normalized program this firmware would execute, or why it cannot. */
-  prepare(input: unknown): Promise<PrepareResult> {
+  async prepare(input: unknown): Promise<PrepareResult> {
     const { source } = parse(PrepareInputSchema, input)
-    return this.preparedFor(source)
+    const result = await this.preparedFor(source)
+    if (!result.ok) return result
+    // Preparation caches are connection-independent; quarantine decisions are not.
+    const currentIssue = this.executionIssue({
+      kind: "program",
+      program: result.program,
+    })
+    return currentIssue
+      ? { ok: false, error: currentIssue, line: null }
+      : result
+  }
+
+  private executionIssue(content: ExecutionContent) {
+    return (
+      this.adapter.executionIssue?.({
+        ...content,
+        device: this.session?.device ?? null,
+      }) ?? null
+    )
   }
 
   /**
@@ -833,8 +854,21 @@ export class MachineController {
 
   private async prepareProgram(source: string): Promise<PrepareResult> {
     const { programs } = this.ports
-    if (programs) return programs.prepare(this.adapter.id, source)
-    return prepareResult(this.adapter, source)
+    const result = programs
+      ? await programs.prepare(this.adapter.id, source)
+      : prepareResult(this.adapter, source)
+    if (result.ok) {
+      // Structured cloning from the worker removes freezing. Keep the assessment
+      // bound to the exact immutable text and part additions it inspected.
+      for (const part of result.program.parts) {
+        Object.freeze(part.before)
+        Object.freeze(part.after)
+        Object.freeze(part)
+      }
+      Object.freeze(result.program.parts)
+      Object.freeze(result.program)
+    }
+    return result
   }
 
   async run(input: unknown): Promise<MachineSnapshot> {
@@ -844,7 +878,7 @@ export class MachineController {
     this.admitNow({ key: "run" })
     let prepared: PrepareResult
     try {
-      prepared = await this.preparedFor(request.source)
+      prepared = await this.prepare({ source: request.source })
     } catch (error) {
       throw new MachineError("invalid", message(error, "Invalid NC program."))
     }
@@ -936,6 +970,7 @@ export class MachineController {
           await playNextPart(
             context,
             running.request,
+            running.program,
             running.bedCleanBefore,
             tracker,
             index,
@@ -1397,6 +1432,18 @@ export class MachineController {
         clock: this.ports.clock,
         signal: activity.controller.signal,
         streaming: () => this.streaming(session.store.telemetry),
+        resumeProgram: () => {
+          const running = this.running
+          if (
+            this.session !== session ||
+            !running ||
+            this.job?.id !== running.request.id ||
+            !isJobActive(this.job) ||
+            !this.tracker?.streaming
+          )
+            return null
+          return running.program
+        },
         admit: (request, telemetry) =>
           admit(request, {
             ...this.admissionContext(),
