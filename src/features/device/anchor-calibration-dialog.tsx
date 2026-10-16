@@ -40,7 +40,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
   const [chosen, setChosen] = useState("")
-  const [confirmed, setConfirmed] = useState(false)
+  const [confirmedSetup, setConfirmedSetup] = useState<string | null>(null)
   const strategy = strategyById("inside-corner")!
   const probes = kit.probing
     ? strategyProbes(strategy, library, kit.probing).filter(
@@ -48,9 +48,21 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
       )
     : []
   const tool =
-    probes.find((entry) => entry.tool.id === chosen)?.tool ?? probes.at(0)?.tool
+    probes.find((entry) => entry.tool.id === chosen)?.tool ??
+    (!chosen ? probes.at(0)?.tool : undefined)
   const device = machine.connection.device
   const anchors = machine.anchors.value
+  const setupKey = JSON.stringify({
+    deviceId: placement.deviceId,
+    connectionId: machine.connection.id,
+    tool,
+    anchors,
+  })
+  const confirmed = confirmedSetup === setupKey
+  const changeStep = (next: number) => {
+    setStep(next)
+    setConfirmedSetup(null)
+  }
   let reason = reference
     ? null
     : "This machine has no supported anchor calibration reference."
@@ -146,12 +158,12 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
           <Button
             variant="outline"
             disabled={step === 0}
-            onClick={() => setStep(step - 1)}
+            onClick={() => changeStep(step - 1)}
           >
             Back
           </Button>
           {step < 2 ? (
-            <Button onClick={() => setStep(step + 1)}>Next</Button>
+            <Button onClick={() => changeStep(step + 1)}>Next</Button>
           ) : (
             <ReasonButton
               label="Prepare calibration job"
@@ -196,7 +208,10 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
                   value: probe.id,
                   label: probe.name,
                 }))}
-                onValueChange={setChosen}
+                onValueChange={(value) => {
+                  setChosen(value)
+                  setConfirmedSetup(null)
+                }}
               />
             </Field>
             <CalibrationIllustration kind="anchor" />
@@ -233,7 +248,9 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
               <Checkbox
                 id={`${id}-confirm`}
                 checked={confirmed}
-                onCheckedChange={(value) => setConfirmed(value === true)}
+                onCheckedChange={(value) =>
+                  setConfirmedSetup(value === true ? setupKey : null)
+                }
               />
               <FieldLabel htmlFor={`${id}-confirm`}>
                 I have checked the reference, probe signal and complete travel

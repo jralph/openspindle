@@ -130,7 +130,7 @@ export function ProbeDiameterCalibrationDialog({
   const session = useJobSession()
   const host = useHost()
   const navigate = useNavigate()
-  const [confirmed, setConfirmed] = useState(false)
+  const [confirmedSetup, setConfirmedSetup] = useState<string | null>(null)
   const [valid, setValid] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const placement = projectPlacement(workspace.state, fixtures.state)
@@ -166,6 +166,18 @@ export function ProbeDiameterCalibrationDialog({
     nextIndex > 0
       ? toMicrometre(readings[nextIndex - 1].result!.diameter)
       : draft.settings.diameter
+  const setupKey = JSON.stringify({
+    step: draft.step,
+    tool,
+    settings: draft.settings,
+    logs: draft.logs,
+    sources: draft.sources,
+    deviceId: placement.deviceId,
+    connectionId: machine.connection.id,
+  })
+  const confirmed = confirmedSetup === setupKey
+  const setConfirmed = (value: boolean) =>
+    setConfirmedSetup(value ? setupKey : null)
   const report = inspectionReport(deriveJobView(session, machine))
   const selectTool = (toolId: string) => {
     update({

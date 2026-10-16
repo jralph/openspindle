@@ -2,6 +2,8 @@
 
 Device → **Anchors** offers **Auto calibrate Anchor 1** on the Z1 and **Calibrate 3D probe diameter**. Both are illustrated guides that prepare separate probing plates. Opening a guide, editing settings and preparing a plate send no machine commands. Review and start motion with **Run** on Job; normal homing, tool-change, probe and job checks remain in force. Do not confuse the wired Z-only laser probe with the selected XYZ touch probe.
 
+Setup confirmations apply to the probe entry and connected device currently shown. Changing the probe, its library data or the device connection requires confirmation again; a missing selected probe is never silently replaced. Moving between guide steps also clears confirmation. Anchor calibration additionally requires confirmation again after the device's anchor configuration changes; diameter calibration does so after settings or readings change.
+
 ## Anchor 1
 
 Use the supplied L-bracket pinned and secured in its normal Anchor 1 position, with clean top and inner faces. Choose the physical 3D probe's library entry and its effective ball diameter. Home the machine, test the probe signal and position the probe above solid bracket top about 5 mm left and 5 mm forward of the inner corner. Check the full route on the installed bracket. The job uses the existing front-left inside-corner routine: two top touches, then two contacts on each inner wall, with 10 mm X/Y distances and a 2 mm side depth below the top. It changes the active work X/Y/Z origin.
