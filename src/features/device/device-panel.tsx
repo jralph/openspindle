@@ -56,11 +56,12 @@ export function DevicePanel({
     : null
   const [notice, setNotice] = useState("")
   const [spindleTargetInput, setSpindleTargetInput] = useState("")
+  const reportedTarget =
+    snapshot.simulatorController.targetRpm ?? telemetry?.spindleTargetRpm
   useEffect(
     () => setSpindleTargetInput(""),
-    [snapshot.connection.id, telemetry?.spindleTargetRpm]
+    [snapshot.connection.id, reportedTarget]
   )
-  const reportedTarget = telemetry?.spindleTargetRpm
   const suggestedRpm =
     reportedTarget && limits && reportedTarget >= limits.spindleRpmMin
       ? reportedTarget

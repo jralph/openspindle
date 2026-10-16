@@ -22,6 +22,7 @@ OpenSpindle is a desktop app for preparing, checking and running jobs on a Maker
 - A run checklist, upload read-back and large programs sent in parts
 - Guided stock/workholding/origin/tool setup, editable facing with a feeds and speeds assistant, measured XY setup proposals, reusable local processes and sampled stock-removal playback
 - The job followed live in the 3D view, with the moves ahead, where the probe touches next and the time left
+- Xbox-style gamepad Step jogging on a physical Z1, controller RPM/start/stop, and simulator Direct steering, with 5/10/25/50/75/100 percent jog speeds
 - Machine controls, a console to send the machine one line at a time, the machine's camera, its height map and its stored anchors
 - Machine alarms by name, with what clears them; a pressed E-stop and failed homing diagnosed, with a read of the home switches
 - A simulated Z1 to try jobs on without a machine, moving as the Z1's planner moves it, its camera picture drawn as the Z1's camera sees the bed (**Settings › General › Z1 Simulator device**)

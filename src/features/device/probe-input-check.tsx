@@ -137,6 +137,10 @@ function SignalWatch({
       : "Finish tool setting and positioning; keep the spindle stopped"
   )
   const [verifiedId, setVerifiedId] = useState<string | null>(null)
+  const [readout, setReadout] = useState<{
+    reads: number
+    triggered: boolean
+  } | null>(null)
   useEffect(() => {
     callback.current = onVerified
   }, [onVerified])
@@ -203,6 +207,10 @@ function SignalWatch({
               "The signal check changed. Return to the previous step and Next to check again."
             )
           if (!before.availability.readSwitches.allowed) {
+            setMessage(
+              before.availability.readSwitches.reason ??
+                "Waiting for the machine to allow a probe signal read"
+            )
             await waitForNextRead(signal)
             continue
           }
@@ -218,6 +226,11 @@ function SignalWatch({
             throw new Error(
               "The machine did not report its probe input. Check the cable, then return to the previous step and Next."
             )
+          const triggered = report.probe
+          setReadout((current) => ({
+            reads: (current?.reads ?? 0) + 1,
+            triggered,
+          }))
           const after = await host.snapshot()
           requireActive(signal)
           checkPose(after, connectionId, binding)
@@ -288,6 +301,12 @@ function SignalWatch({
       <div role="status" aria-live="polite">
         <Badge variant={verified ? "secondary" : "outline"}>{badge}</Badge>
         <p className="mt-2">{shown}</p>
+        {readout && (
+          <FieldDescription className="font-numeric">
+            Live input: {readout.triggered ? "Contact" : "Open"} ·{" "}
+            {readout.reads} readings received
+          </FieldDescription>
+        )}
       </div>
       <p>
         After positioning, leave the axes stationary and spindle stopped. The
@@ -296,7 +315,7 @@ function SignalWatch({
       </p>
       <p>
         {conductive
-          ? "Touch the rod once with a loose wire or metal contact electrically connected to the bracket. Hold for about two seconds, then remove it. Do not push or bend the rod."
+          ? "Touch the stationary rod with a wire or metal object connected to the machine's conductive table or bracket. Hold for about two seconds, then remove it. A loose metal object alone may not complete the sensing circuit. Do not push or bend the rod."
           : "Gently trigger the stationary probe once, hold for about two seconds, then let it return."}{" "}
         Return to the PC and continue when the signal is verified.
       </p>

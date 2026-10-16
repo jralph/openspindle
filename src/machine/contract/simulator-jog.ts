@@ -22,7 +22,7 @@ export const SimulatedJogSampleSchema = SimulatedJogSessionSchema.extend({
   spindleModifier: z.boolean(),
   neutral: z.boolean(),
   enableHeld: z.boolean(),
-  speedScale: z.number().min(0.05).max(0.25),
+  speedScale: z.number().min(0.05).max(1),
 }).refine(
   (sample) => Math.hypot(sample.x, sample.y, sample.z) <= 1.000001,
   "XYZ vector exceeds full deflection"
@@ -39,7 +39,7 @@ export const SimulatedJogActionSchema = SimulatedJogSessionSchema.extend({
         .min(-10)
         .max(10)
         .refine((n) => Math.abs(n) >= 0.1),
-      speedScale: z.number().min(0.05).max(0.25),
+      speedScale: z.number().min(0.05).max(1),
     }),
     z.strictObject({ kind: z.literal("target"), rpm: z.int().positive() }),
     z.strictObject({ kind: z.literal("start"), rpm: z.int().positive() }),

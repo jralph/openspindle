@@ -22,7 +22,7 @@ import { GamepadStepControls } from "./gamepad-step-controls"
 
 /** The jog steps offered, in millimetres, and speeds, in percent of the machine's maximum. */
 const JOG_STEPS = [0.1, 1, 5, 10]
-const JOG_SPEEDS = [5, 10, 25]
+const JOG_SPEEDS = [5, 10, 25, 50, 75, 100]
 
 /** [axis, direction, button text, grid position, accessible label]. */
 const JOG_BUTTONS = [

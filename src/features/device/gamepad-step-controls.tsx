@@ -14,7 +14,7 @@ import type { MachineSnapshot } from "@/machine/contract"
 import { useMachineSnapshot } from "@/platform/machine"
 import { useGamepadStepJog } from "./use-gamepad-step-jog"
 
-/** Throwaway feasibility probe: input monitoring everywhere, motion only on a local simulator. */
+/** Controller input using the connected machine's supported motion modes. */
 export function GamepadStepControls({
   step,
   speed,
@@ -36,7 +36,8 @@ export function GamepadStepControls({
   const simulator = device !== null && isSimulator(device)
   const input = useGamepadStepJog({
     connectionId: snapshot.connection.id,
-    simulator,
+    enabled: snapshot.connection.status === "connected",
+    directSupported: simulator,
     step,
     speed,
     spindleRpm,
@@ -46,7 +47,6 @@ export function GamepadStepControls({
   })
   const selected = input.selected
   const canArm =
-    simulator &&
     selected?.supported === true &&
     snapshot.simulatorController.arm.allowed &&
     !input.pending
@@ -62,8 +62,10 @@ export function GamepadStepControls({
         variant="label"
         className="flex flex-wrap items-center justify-between gap-2"
       >
-        Gamepad prototype
-        <Badge variant="secondary">Simulator only</Badge>
+        Gamepad
+        <Badge variant="secondary">
+          {simulator ? "Simulator" : "Machine controls"}
+        </Badge>
       </FieldLegend>
       {input.controllers.length > 0 && (
         <Field>
@@ -89,7 +91,14 @@ export function GamepadStepControls({
           value={input.mode}
           options={[
             { value: "step", label: "Step" },
-            { value: "direct", label: "Direct" },
+            {
+              value: "direct",
+              label: "Direct",
+              disabled: !simulator,
+              reason: !simulator
+                ? "Stock Z1 firmware has no verified release-to-stop jog cancellation. Use Step."
+                : undefined,
+            },
           ]}
           onValueChange={input.setMode}
         />
@@ -110,7 +119,7 @@ export function GamepadStepControls({
             else void input.arm()
           }}
         >
-          {input.armed ? "Disarm controller" : "Arm simulator jogging"}
+          {input.armed ? "Disarm controller" : "Arm controller"}
         </Button>
         <Badge variant={input.armed ? "default" : "outline"}>
           {input.armed ? "Armed" : "Disarmed"}
@@ -120,7 +129,7 @@ export function GamepadStepControls({
         <FieldDescription>
           Hold LB, then use the left stick or D-pad for one XY step, or
           right-stick up/down for one Z step. Return to centre before the next
-          step. B halts the simulator and disarms.
+          step. B halts the machine and disarms.
         </FieldDescription>
       )}
       {input.mode === "step" && (
@@ -144,7 +153,10 @@ export function GamepadStepControls({
       </FieldDescription>
       {!simulator && (
         <FieldDescription>
-          Connect the local Z1 simulator to enable jogging.
+          Stock Z1 uses finite Step jogging with the spindle stopped. A step
+          finishes on ordinary stick release. Interrupting or disarming during
+          motion uses Stop and enters Alarm; unlock and home before rearming.
+          Direct steering is available on the simulator only.
         </FieldDescription>
       )}
       <FieldDescription role="status">{input.notice}</FieldDescription>

@@ -72,6 +72,7 @@ export async function executeCommand(
   // No await separates this final cancellation check, the reply lease and sending.
   if (automaticOff && preflight.signal.aborted)
     throw abortError(preflight.signal)
+  if (signal.aborted) throw abortError(signal)
   const acknowledgement =
     plan.acknowledged && !streaming
       ? expectAcknowledgement(context, label, plan.timeoutMs)
@@ -112,6 +113,7 @@ export async function executeCommand(
     // Unverified motion leaves the machine in an unknown state: isolate it.
     if (plan.motion) {
       const message = `${error.message} Its outcome is unknown; check the machine before reconnecting. No command was retried.`
+      context.onUnverifiedMotion?.()
       session.close(message)
       throw new MachineError("unverified", message)
     }

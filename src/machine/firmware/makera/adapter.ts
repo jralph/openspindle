@@ -47,6 +47,10 @@ import {
   makeraExecutionIssue,
   assessMakeraPhysicalProgram,
 } from "./execution-safety.ts"
+import {
+  MACHINE_Z,
+  z1WorkBounds,
+} from "../../../domain/fixtures/makera-z1/work-envelope.ts"
 
 const command = (payload: string): OutboundFrame => ({
   type: FRAME_TYPES.command,
@@ -257,11 +261,20 @@ export const makeraAdapter: FirmwareAdapter = {
   plan: planMakeraCommand,
   rules: makeraRules,
   // Application limits for jogging, spindle speed and overrides, not the machine's rating.
+  controllerStepBounds: (anchors) => {
+    const anchor = anchors.anchors.find((entry) => entry.id === "anchor-1")
+    if (!anchor) return null
+    const bounds = z1WorkBounds([anchor.x, anchor.y])
+    return {
+      min: [...bounds.min, MACHINE_Z.min],
+      max: [...bounds.max, MACHINE_Z.max],
+    }
+  },
   limits: {
     jogMinDistance: 0.01,
     jogMaxDistance: 10,
     jogMinSpeedScale: 0.01,
-    jogMaxSpeedScale: 0.25,
+    jogMaxSpeedScale: 1,
     spindleRpmMin: SIMULATOR_SPINDLE_LIMITS.min,
     spindleRpmMax: SIMULATOR_SPINDLE_LIMITS.max,
     overrideMin: 50,

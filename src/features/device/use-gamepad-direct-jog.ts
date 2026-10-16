@@ -55,7 +55,7 @@ export function useGamepadDirectJog(options: {
       ["Idle", "Run"].includes(telemetry.state) &&
       telemetry.feed === 0
     ) {
-      log.info("Direct simulator zero confirmed", {
+      log.info("Controller zero confirmed", {
         delayMs: Date.now() - current.zeroAt,
         position: telemetry.machine,
       })
@@ -70,7 +70,7 @@ export function useGamepadDirectJog(options: {
     record.current = null
     setActive(false)
     if (!current) return
-    log.info("Direct simulator end requested", {
+    log.info("Controller end requested", {
       reason,
       sessionId: current.token.sessionId,
     })
@@ -80,13 +80,13 @@ export function useGamepadDirectJog(options: {
     void current.machine
       .endSimulatedJog(current.token)
       .then((result) => {
-        log.info("Direct simulator end confirmed", {
+        log.info("Controller end confirmed", {
           state: result.telemetry?.state,
           position: result.telemetry?.machine,
         })
       })
       .catch((error: Error) => {
-        log.warn("Direct simulator end failed", error.message)
+        log.warn("Controller end failed", error.message)
       })
       .finally(() => {
         working.current = false
@@ -124,7 +124,7 @@ export function useGamepadDirectJog(options: {
         zeroAt: null,
       }
       setActive(true)
-      log.info("Controller simulator armed", {
+      log.info("Controller armed", {
         sessionId: token.sessionId,
         mode: options.mode,
       })
@@ -157,7 +157,7 @@ export function useGamepadDirectJog(options: {
     const moving = Math.hypot(...sample.vector) > 0
     if (current.moving && !moving) {
       current.zeroAt = now
-      log.info("Direct simulator zero requested", {
+      log.info("Controller zero requested", {
         sessionId: current.token.sessionId,
         capturedAt: sample.capturedAt,
       })
@@ -184,7 +184,7 @@ export function useGamepadDirectJog(options: {
       .then((receipt) => {
         if (record.current === current && now - current.lastLog >= 1000) {
           current.lastLog = now
-          log.info("Direct simulator input accepted", {
+          log.info("Controller input accepted", {
             sequence: receipt.sequence,
             ageMs: Date.now() - sample.capturedAt,
             x: input.x,
@@ -247,12 +247,12 @@ export function useGamepadDirectJog(options: {
       capturedAt,
       action: requested,
     }
-    log.info("Controller simulator action requested", input)
+    log.info("Controller action requested", input)
     void current.machine
       .actionSimulatedJog(input)
       .then((receipt) => {
         if (record.current !== current) return
-        log.info("Controller simulator action confirmed", {
+        log.info("Controller action confirmed", {
           receipt,
           action: requested,
         })
@@ -261,7 +261,7 @@ export function useGamepadDirectJog(options: {
       .catch((error: Error) => {
         if (record.current !== current) return
         const code = machineErrorCode(error)
-        log.warn("Controller simulator action failed", {
+        log.warn("Controller action failed", {
           code,
           reason: error.message,
         })

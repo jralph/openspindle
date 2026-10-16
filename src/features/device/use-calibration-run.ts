@@ -186,9 +186,21 @@ export function useCalibrationRun(
         throw new Error("Wait for the run request to settle, or use Stop.")
       const fresh = await host.snapshot()
       if (fresh.job?.id === current.session.runId) {
-        sameConnection(fresh, current.connectionId)
         if (!isTerminalJobPhase(fresh.job.phase))
           throw new Error("Stop the active run before dismissing it.")
+        // A lost run remains in the host after reconnect. Forgetting its terminal
+        // record sends no motion, but never treat it as a completed measurement.
+        if (
+          fresh.connection.id !== current.connectionId &&
+          (!isFresh(fresh.telemetry, Date.now()) ||
+            fresh.telemetry.state !== "Idle" ||
+            fresh.telemetry.job !== null ||
+            fresh.telemetry.spindleOn !== false ||
+            fresh.telemetry.spindleRpm !== 0)
+        )
+          throw new Error(
+            "Check that the machine has stopped. Dismiss the lost run once it reports Idle with the spindle off."
+          )
         await host.dismissJob()
       }
       if (jobSessionStore.state?.runId === current.session.runId)

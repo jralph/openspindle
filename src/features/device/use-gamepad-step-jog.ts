@@ -8,7 +8,8 @@ import type { ControllerInput } from "./gamepad-step-input"
 
 type Options = {
   connectionId: string | null
-  simulator: boolean
+  enabled: boolean
+  directSupported: boolean
   step: number
   speed: number
   spindleRpm: number
@@ -17,7 +18,7 @@ type Options = {
   stop: () => Promise<MachineSnapshot>
 }
 
-/** Renderer input probe; every simulator command still uses the existing machine gateway. */
+/** Every controller action uses a connection-bound machine-owned session. */
 export function useGamepadStepJog(options: Options) {
   const [controllers, setControllers] = useState<ControllerInput[]>([])
   const [selection, setSelection] = useState("")
@@ -63,7 +64,7 @@ export function useGamepadStepJog(options: Options) {
       directSeen.current = false
       return
     }
-    if (snapshot.activity?.label === "Simulator controller")
+    if (snapshot.activity?.label === "Gamepad controller")
       directSeen.current = true
     else if (directSeen.current) disarm("Direct session ended — arm again")
   })
@@ -79,7 +80,7 @@ export function useGamepadStepJog(options: Options) {
       adjusting &&
       stepPressed &&
       input.supported &&
-      options.simulator &&
+      options.enabled &&
       document.hasFocus() &&
       !document.hidden
     ) {
@@ -96,7 +97,7 @@ export function useGamepadStepJog(options: Options) {
       input?.speedCycleHeld &&
       !speedButtonHeld.current &&
       input.supported &&
-      options.simulator &&
+      options.enabled &&
       document.hasFocus() &&
       !document.hidden &&
       !input.stopHeld &&
@@ -116,7 +117,7 @@ export function useGamepadStepJog(options: Options) {
     if (!armedRef.current) return
     if (
       !input?.supported ||
-      !options.simulator ||
+      !options.enabled ||
       !document.hasFocus() ||
       document.hidden
     ) {
@@ -267,13 +268,16 @@ export function useGamepadStepJog(options: Options) {
     }
   }, [options.connectionId, selection, mode])
   const closeInput = useEffectEvent(() => disarm("Controller input ended"))
+  useEffect(() => {
+    if (!options.directSupported) setMode("step")
+  }, [options.directSupported])
   const selected =
     controllers.find((entry) => entry.key === selection) ??
     (selection ? null : (controllers[0] ?? null))
   const arm = async () => {
     const input = live.current
     if (
-      !options.simulator ||
+      !options.enabled ||
       !options.connectionId ||
       !document.hasFocus() ||
       direct.pending
@@ -295,10 +299,10 @@ export function useGamepadStepJog(options: Options) {
       return
     }
     if (!snapshot.simulatorController.arm.allowed) {
-      setNotice("Simulator is unavailable for arming")
+      setNotice("Machine is unavailable for arming")
       return
     }
-    setNotice("Arming simulator controller…")
+    setNotice("Arming controller…")
     const epoch = ++armEpoch.current
     if (!(await direct.begin())) return
     if (epoch !== armEpoch.current) return

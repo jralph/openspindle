@@ -120,6 +120,7 @@ export const MachineSnapshotSchema = z.object({
   revision: z.int().nonnegative(),
   probeCheck: ProbeCheckSchema.nullable().optional(),
   simulatorController: z.object({
+    targetRpm: z.number().nullable().optional(),
     arm: AvailabilitySchema,
     step: AvailabilitySchema,
     spindle: AvailabilitySchema,

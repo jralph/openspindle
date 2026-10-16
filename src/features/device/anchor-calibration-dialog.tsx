@@ -504,15 +504,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
               <ProbeInputCheck
                 tool={tool}
                 toolNumber={probeNumber ?? null}
-                disabled={
-                  !!owned ||
-                  !target ||
-                  !machine.telemetry?.machine ||
-                  Math.abs(machine.telemetry.machine.x - target[0]) >
-                    reference!.startTolerance ||
-                  Math.abs(machine.telemetry.machine.y - target[1]) >
-                    reference!.startTolerance
-                }
+                disabled={!!owned}
                 onVerified={(signalBindingId) =>
                   update({ signalBindingId, signalToolId: tool.id })
                 }

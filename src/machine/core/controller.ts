@@ -10,6 +10,7 @@ import type {
   SimulatedJogReceipt,
 } from "../contract/simulator-jog.ts"
 import { SimulatedJogOwner } from "./simulated-jog.ts"
+import { ControllerStepJogOwner } from "./controller-step-jog.ts"
 import { ProbeSignalCheck } from "./probe-check.ts"
 import {
   freshDiagnosticStatus,
@@ -194,7 +195,7 @@ export class MachineController {
   private lastError: string | null = null
   private activity: Foreground | null = null
   private direct: {
-    owner: SimulatedJogOwner
+    owner: SimulatedJogOwner | ControllerStepJogOwner
     token: SimulatedJogSession
     activity: Foreground
     session: MachineSession
@@ -327,6 +328,11 @@ export class MachineController {
   ): Promise<MachineSnapshot> {
     const existing = this.session
     if (this.connectedTo(target)) return Promise.resolve(this.snapshot())
+    if (this.direct)
+      throw new MachineError(
+        "refused",
+        "Disarm the controller before changing the device connection."
+      )
     if (existing && !existing.ready)
       throw new MachineError(
         "busy",
@@ -380,6 +386,11 @@ export class MachineController {
    */
   disconnect(input: unknown): MachineSnapshot {
     const { confirmed = false } = parse(DisconnectRequestSchema, input)
+    if (this.direct)
+      throw new MachineError(
+        "refused",
+        "Disarm the controller before disconnecting."
+      )
     this.confirmLeavingJob(confirmed, "disconnect")
     this.disconnects++
     this.endRestart()
@@ -477,14 +488,20 @@ export class MachineController {
     if (
       !session?.ready ||
       !session.device ||
-      !isSimulator(session.device) ||
-      !this.adapter.simulatorJog ||
+      (!this.adapter.simulatorJog && !this.adapter.controllerStepBounds) ||
       request.connectionId !== this.connectionId(session)
     )
       throw new MachineError(
         "refused",
-        "Connect the local simulator before arming Direct."
+        "Connect a supported machine before arming the controller."
       )
+    const simulator = isSimulator(session.device)
+    if (!simulator && request.mode !== "step")
+      throw new MachineError(
+        "refused",
+        "Stock Z1 firmware supports finite Step jogging. Direct release-to-stop steering requires a verified firmware cancellation mechanism."
+      )
+    this.probeSignal.invalidate()
     const command = {
       type: "jog",
       axis: "X",
@@ -495,7 +512,7 @@ export class MachineController {
       speedScale: 0.1,
     } as const
     this.admitNow({ key: "jog", command })
-    const activity = this.begin("command", "Simulator controller")
+    const activity = this.begin("command", "Gamepad controller")
     const context: OperationContext = {
       session,
       adapter: this.adapter,
@@ -514,19 +531,31 @@ export class MachineController {
       connectionId: request.connectionId,
       sessionId: crypto.randomUUID(),
     }
-    const owner = new SimulatedJogOwner(
-      context,
-      token,
-      request.mode,
-      (reason) => {
-        this.trace.record("note", reason)
-        this.ports.log?.warn(reason)
-        void this.endSimulatedJog(token).catch(() => {})
-      },
-      () => {
-        if (this.direct?.token.sessionId === token.sessionId) this.publish()
-      }
-    )
+    const owner = simulator
+      ? new SimulatedJogOwner(
+          context,
+          token,
+          request.mode,
+          (reason) => {
+            this.trace.record("note", reason)
+            this.ports.log?.warn(reason)
+            void this.endSimulatedJog(token).catch(() => {})
+          },
+          () => {
+            if (this.direct?.token.sessionId === token.sessionId) this.publish()
+          }
+        )
+      : new ControllerStepJogOwner(
+          context,
+          token,
+          (reason) => {
+            this.trace.record("note", reason)
+            void this.endSimulatedJog(token).catch(() => {})
+          },
+          () => {
+            if (this.direct?.token.sessionId === token.sessionId) this.publish()
+          }
+        )
     const direct = {
       owner,
       token,
@@ -540,7 +569,7 @@ export class MachineController {
       await session.waitForDrain(activity.controller.signal)
       const telemetry = await freshDiagnosticStatus(
         context,
-        "Simulator status was not received before Direct arming."
+        "Machine status was not received before controller arming."
       )
       requireAdmission(context, { key: "jog", command }, telemetry)
       if (
@@ -550,7 +579,7 @@ export class MachineController {
       )
         throw new MachineError(
           "refused",
-          "Direct requires an Idle simulator with the spindle off."
+          "Controller arming requires Idle with the spindle off."
         )
       beginSent = true
       await owner.start()
@@ -558,7 +587,7 @@ export class MachineController {
         throw cancelled()
       this.trace.record(
         "note",
-        `Direct simulator session started: ${token.sessionId}`
+        `Controller session started: ${token.sessionId}`
       )
       return token
     } catch (error) {
@@ -568,6 +597,7 @@ export class MachineController {
         // Once begin might have reached the simulator, closing prevents a late start from owning it.
         if (
           beginSent &&
+          simulator &&
           !(error instanceof MachineError && error.code === "rejected")
         )
           session.close(message(error, "Direct simulator arming failed."))
@@ -591,7 +621,7 @@ export class MachineController {
       return await direct.owner.sample(sample)
     } catch (error) {
       const receivedAt = this.ports.clock.now()
-      this.ports.log?.warn("Direct simulator sample rejected", {
+      this.ports.log?.warn("Controller sample rejected", {
         reason: message(error, "Direct sample failed"),
         sessionId: sample.sessionId,
         sequence: sample.sequence,
@@ -624,17 +654,17 @@ export class MachineController {
       )
     this.trace.record(
       "note",
-      `Controller simulator action requested: ${JSON.stringify(request)}`
+      `Controller action requested: ${JSON.stringify(request)}`
     )
     try {
       const receipt = await direct.owner.action(request)
       this.trace.record(
         "note",
-        `Controller simulator action confirmed: ${JSON.stringify({ receipt, telemetry: direct.session.store.telemetry })}`
+        `Controller action confirmed: ${JSON.stringify({ receipt, telemetry: direct.session.store.telemetry })}`
       )
       return receipt
     } catch (error) {
-      this.ports.log?.warn("Controller simulator action failed", {
+      this.ports.log?.warn("Controller action failed", {
         reason: message(error, "Action failed"),
         sequence: request.sequence,
       })
@@ -664,10 +694,7 @@ export class MachineController {
     direct.ending = direct.owner
       .end()
       .then(() => {
-        this.trace.record(
-          "note",
-          `Direct simulator stopped: ${token.sessionId}`
-        )
+        this.trace.record("note", `Controller stopped: ${token.sessionId}`)
         return this.snapshot()
       })
       .catch((error: unknown) => {
@@ -690,17 +717,23 @@ export class MachineController {
   ) {
     this.trace.record(
       "note",
-      "Direct simulator outcome is unverified; no motion was retried."
+      "Controller outcome is unverified; no motion was retried."
     )
     this.invalidateDirect()
     direct.session.close(
-      `Direct simulator outcome is unverified: ${message(error, "stop failed")}. No motion was retried.`
+      `Controller outcome is unverified: ${message(error, "stop failed")}. No motion was retried.`
     )
   }
 
-  private invalidateDirect() {
+  private invalidateDirect(haltPhysical = true) {
     const direct = this.direct
     if (!direct) return
+    if (
+      haltPhysical &&
+      direct.owner instanceof ControllerStepJogOwner &&
+      direct.session.ready
+    )
+      direct.session.send(this.adapter.halt)
     direct.owner.invalidate()
     this.direct = null
     direct.activity.controller.abort(cancelled())
@@ -780,7 +813,7 @@ export class MachineController {
     const session = this.session
     if (!session?.ready)
       throw new MachineError("not-connected", "Connect a device first.")
-    this.invalidateDirect()
+    this.invalidateDirect(false)
     for (const frame of this.transfer?.cancel() ?? []) session.send(frame)
     this.activity?.controller.abort(
       new MachineError("cancelled", "Interrupted by Stop.")
@@ -1760,23 +1793,28 @@ export class MachineController {
       available.resume = blocked
     }
     const arm =
-      ready?.device && isSimulator(ready.device)
+      ready?.device &&
+      (isSimulator(ready.device) || this.adapter.controllerStepBounds)
         ? available.jog
         : {
             allowed: false,
             deferred: false,
-            reason: "Connect the local simulator first.",
+            reason: "Connect a supported machine first.",
           }
     const inactive = {
       allowed: false,
       deferred: false,
-      reason: "Arm simulator controller first.",
+      reason: "Arm the controller first.",
     }
     return {
       revision,
       probeCheck: this.probeSignal.value,
       simulatorController: {
         arm,
+        targetRpm:
+          this.direct?.owner instanceof ControllerStepJogOwner
+            ? this.direct.owner.targetRpm
+            : null,
         step: this.direct?.owner.availability("step") ?? inactive,
         spindle: this.direct?.owner.availability("spindle") ?? inactive,
       },
