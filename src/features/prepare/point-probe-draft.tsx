@@ -84,9 +84,9 @@ export function PointProbeDraft({
           Probe part Z here…
         </Button>
         <FieldDescription>
-          The Z guide keeps the probe fitted and asks you to position at the
-          picked XY before its bounded surface search. Use Jog to X / Y and Jog
-          to Z separately if needed.
+          The Z guide keeps the measured probe fitted, retracts, moves to this
+          XY, then probes down from the raised height to the real surface.
+          Review and start the complete sequence in its sidebar.
         </FieldDescription>
         <ProbeSafetyNotice native />
         <Field>

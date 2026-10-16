@@ -1,4 +1,8 @@
-import type { ProbeCheckBinding, ZProbeSettings } from "@/machine/contract"
+import type {
+  PointZProbePlan,
+  ProbeCheckBinding,
+  ZProbeSettings,
+} from "@/machine/contract"
 
 const n = (value: number) => String(Number(value.toFixed(4)))
 
@@ -31,6 +35,12 @@ export function boundedZNc(
     "M370",
     "M494.1",
     "M400",
+    ...zContactLines(settings),
+  ].join("\n")
+}
+
+function zContactLines(settings: ZProbeSettings) {
+  return [
     `G38.2 Z-${n(settings.travel)} F30`,
     "G10 L20 P0 Z0",
     "G38.4 Z0.2 F15",
@@ -44,5 +54,34 @@ export function boundedZNc(
     "M494.2",
     "M5",
     "M2",
+  ]
+}
+
+/** One retained probe, one signal proof and one owned run; no manual XY or Z positioning. */
+export function boundedPointZNc(
+  binding: ProbeCheckBinding,
+  plan: PointZProbePlan
+) {
+  const start = [...binding.position]
+  const moves: string[] = []
+  const move = (axis: number, target: number, feed: number) => {
+    const delta = Number(n(target - start[axis]))
+    if (Math.abs(delta) >= 0.001)
+      moves.push(`G38.3 ${["X", "Y", "Z"][axis]}${delta} F${n(feed)}`, "M400")
+    start[axis] = target
+  }
+  move(2, Math.max(-3, start[2]), plan.feed[2])
+  move(0, plan.target[0], plan.feed[0])
+  move(1, plan.target[1], plan.feed[1])
+  return [
+    `;@OPENSPINDLE_PROBE_CHECK ${JSON.stringify(binding)}`,
+    `;@OPENSPINDLE_POINT_Z_PLAN ${JSON.stringify(plan)}`,
+    "M5",
+    "G21 G90 G17 G94 G54",
+    "M370",
+    "M494.1",
+    "M400",
+    ...moves,
+    ...zContactLines(plan.settings),
   ].join("\n")
 }

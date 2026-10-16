@@ -123,9 +123,9 @@ export class MachineGateway {
     return this.controller.run(request)
   }
 
-  dismissJob(): MachineSnapshot {
+  dismissJob(expectedJobId?: string): MachineSnapshot {
     this.requireApp()
-    return this.controller.dismissJob()
+    return this.controller.dismissJob(expectedJobId)
   }
 
   readAnchors(signal?: AbortSignal): Promise<AnchorConfiguration> {

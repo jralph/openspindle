@@ -83,7 +83,7 @@ export interface MachineHost {
   reset: () => Promise<MachineSnapshot>
   prepare: (source: string) => Promise<PrepareResult>
   run: (request: RunRequest) => Promise<MachineSnapshot>
-  dismissJob: () => Promise<MachineSnapshot>
+  dismissJob: (expectedJobId?: string) => Promise<MachineSnapshot>
   readAnchors: (signal?: AbortSignal) => Promise<AnchorConfiguration>
   /** Stores the anchors in the machine's configuration; what it reads back afterwards. */
   writeAnchors: (request: WriteAnchorsRequest) => Promise<WriteAnchorsResult>

@@ -181,7 +181,8 @@ async function releasedStart(context: OperationContext) {
 async function verifyTravelBounds(
   context: OperationContext,
   block: NcBlock,
-  before: Telemetry
+  before: Telemetry,
+  shortenDown = false
 ) {
   const query = context.adapter.probeTravelBounds
   if (!query)
@@ -190,6 +191,7 @@ async function verifyTravelBounds(
       "The host cannot verify probe travel limits. No move was sent."
     )
   let bounds: ReturnType<typeof query.parse> = null
+  let effective = block
   await context.session.request<void>(
     [context.adapter.consoleLine(query.query)],
     (event) => {
@@ -233,8 +235,38 @@ async function verifyTravelBounds(
             ),
           }
         const start = xyz(before)
+        if (shortenDown) {
+          const requested = block.words.find((word) => word.letter === "Z")
+          if (!requested || requested.value >= 0)
+            return {
+              fail: new MachineError(
+                "refused",
+                "Only a downward Z search can be shortened."
+              ),
+            }
+          const travel =
+            Math.floor(
+              Math.min(-requested.value, start[2] - received.min[2] - 0.01) *
+                10000
+            ) / 10000
+          if (travel < 0.001)
+            return {
+              fail: new MachineError(
+                "refused",
+                "There is no downward probe travel above the reported lower Z limit. No search was sent."
+              ),
+            }
+          effective = readNcBlock(
+            block.words
+              .map(
+                (word) =>
+                  `${word.letter}${word.letter === "Z" ? -travel : word.value}`
+              )
+              .join(" ")
+          )
+        }
         const end = [...start]
-        for (const word of block.words) {
+        for (const word of effective.words) {
           const axis = ["X", "Y", "Z"].indexOf(word.letter)
           if (axis >= 0) end[axis] += word.value
         }
@@ -279,6 +311,7 @@ async function verifyTravelBounds(
       "unverified",
       "The probe moved or its tool offset changed while checking travel limits. No move was sent."
     )
+  return effective
 }
 
 /** A successful report must belong to this bounded axis search and agree with stopped MCS. */
@@ -339,6 +372,21 @@ async function step(
 ) {
   const { session, adapter } = context
   let contact: [number, number, number] | null = null
+  let timeoutMs = transit ? 120000 : 30000
+  if (probing && !transit) {
+    const words = readNcBlock(line).words
+    const distance =
+      words.find((word) => ["X", "Y", "Z"].includes(word.letter))?.value ?? 0
+    const feed = words.find((word) => word.letter === "F")?.value ?? 0
+    if (feed > 0)
+      timeoutMs = Math.min(
+        300000,
+        Math.max(
+          timeoutMs,
+          Math.ceil((Math.abs(distance) / feed) * 60000) + 10000
+        )
+      )
+  }
   return session.request<[number, number, number] | null>(
     [adapter.consoleLine(line)],
     (event) => {
@@ -389,7 +437,7 @@ async function step(
       return "ignored"
     },
     {
-      timeoutMs: transit ? 120000 : 30000,
+      timeoutMs,
       timeoutMessage:
         "Bounded probing timed out. No following step was sent and nothing was retried.",
       signal: context.signal,
@@ -473,11 +521,21 @@ export async function runInlineProbe(
       let before: Telemetry | null = releaseInput?.status ?? null
       if (probing && !releasing) before = await releasedStart(context)
       const skipRelease = releasing && releaseInput?.triggered === false
+      let executed = block
       if (probing && !skipRelease && before)
-        await verifyTravelBounds(context, block, before)
+        executed = await verifyTravelBounds(
+          context,
+          block,
+          before,
+          program.probeDownToLimit === true &&
+            contacts.contacts.length === 0 &&
+            !moving &&
+            !releasing
+        )
+      currentLine = `line ${index + 1}: ${executed.code}`
       const contact = skipRelease
         ? null
-        : await step(context, block.code, probing, moving)
+        : await step(context, executed.code, probing, moving)
       // G38 is synchronous, and this also drains every queued ordinary move before advancing.
       await step(context, "M400", false)
       if (contact) {
@@ -486,7 +544,7 @@ export async function runInlineProbe(
             "unverified",
             "No verified start for this contact."
           )
-        await verifyContact(context, block, before, contact, moving)
+        await verifyContact(context, executed, before, contact, moving)
         if (!releasing && !moving) {
           contacts.contacts.push(contact)
           contacts.line ??= index + 1

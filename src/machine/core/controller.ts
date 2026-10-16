@@ -1067,8 +1067,12 @@ export class MachineController {
   }
 
   /** Clears a finished job from the snapshot. */
-  dismissJob(): MachineSnapshot {
-    if (this.job && isTerminalJobPhase(this.job.phase)) {
+  dismissJob(expectedJobId?: string): MachineSnapshot {
+    if (
+      this.job &&
+      (!expectedJobId || this.job.id === expectedJobId) &&
+      isTerminalJobPhase(this.job.phase)
+    ) {
       this.job = null
       this.publish()
     }

@@ -1,15 +1,11 @@
 import { z } from "zod"
-import { ProbeSearchTravelSchema, ProbeTopGapSchema } from "./probe-safety.ts"
+import { ProbeTopGapSchema } from "./probe-safety.ts"
 
-/** Manual near-surface setup; distances limit travel rather than probe compression. */
-export const ZProbeSettingsSchema = z
-  .strictObject({
-    gap: ProbeTopGapSchema,
-    travel: ProbeSearchTravelSchema,
-    clearance: z.number().finite().min(0.5).max(10),
-  })
-  .refine((value) => value.travel > value.gap, {
-    path: ["travel"],
-    message: "Maximum search must exceed the estimated surface gap.",
-  })
+/** The first Z search is shortened to the live lower machine limit before execution. */
+export const ZProbeSettingsSchema = z.strictObject({
+  // Accept existing protected recipes; an estimated gap is no longer required or used.
+  gap: ProbeTopGapSchema.optional(),
+  travel: z.number().finite().min(0.4).max(105),
+  clearance: z.number().finite().min(0.5).max(10),
+})
 export type ZProbeSettings = z.infer<typeof ZProbeSettingsSchema>

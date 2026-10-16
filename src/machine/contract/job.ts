@@ -94,6 +94,8 @@ export const PreparedProgramSchema = z.object({
   physicalExecutionIssue: z.string().nullable().optional(),
   /** Trusted preparer requirement for an inline, contact-by-contact verified routine. */
   probeCheck: ProbeCheckBindingSchema.optional(),
+  /** Trusted permission to shorten the first downward Z search to the live machine limit. */
+  probeDownToLimit: z.boolean().optional(),
   /**
    * The files the program is sent as, in order: one with every line, or parts when it exceeds
    * a file's limits. None from a main process before parts, which sent every line as one.

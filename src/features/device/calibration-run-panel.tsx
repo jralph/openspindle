@@ -15,10 +15,12 @@ export function CalibrationRunPanel({
   runner,
   onMeasured,
   contactTitle = "3 · Probe Anchor 1",
+  positioningLabel = "Continue to manual positioning",
 }: {
   runner: CalibrationRunner
   onMeasured: (offset: number) => void
   contactTitle?: string
+  positioningLabel?: string
 }) {
   const actions = useJobActions()
   const { record, job, view } = runner
@@ -81,7 +83,7 @@ export function CalibrationRunPanel({
             runner.continueSetter.mutate(undefined, { onSuccess: onMeasured })
           }
         >
-          Continue to manual positioning
+          {positioningLabel}
         </Button>
       )}
       {!runner.busy && (

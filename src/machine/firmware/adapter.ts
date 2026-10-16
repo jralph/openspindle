@@ -158,6 +158,7 @@ export function prepareResult(
         ...(assessment?.probeCheck
           ? { probeCheck: assessment.probeCheck }
           : {}),
+        ...(assessment?.probeDownToLimit ? { probeDownToLimit: true } : {}),
       },
     }
   } catch (error) {
@@ -327,7 +328,11 @@ export interface FirmwareAdapter {
   assessPhysicalProgram?: (
     source: string,
     program: PreparedProgram
-  ) => { issue: string | null; probeCheck?: ProbeCheckBinding }
+  ) => {
+    issue: string | null
+    probeCheck?: ProbeCheckBinding
+    probeDownToLimit?: boolean
+  }
   /** Tools whose contact input is checked at rest; separate from tool-setter calibration. */
   probeCheckTools?: readonly number[]
   /** Actual enabled, homed soft limits; probing may bypass the firmware's ordinary limit guard. */

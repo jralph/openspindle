@@ -34,7 +34,7 @@ import { touchPoints } from "./wired-probe/touch-off"
 import { CLEARANCE_Z } from "./wired-probe/travel"
 import { Z1Bed } from "./z1-bed"
 import { boundedDiameterNc } from "./bounded-diameter"
-import { boundedZNc, zProbeMeasurementNc } from "./bounded-z"
+import { boundedPointZNc, boundedZNc, zProbeMeasurementNc } from "./bounded-z"
 import { boundedMoveNc } from "./bounded-move"
 import { boundedAnchorNc, anchorMeasurementNc } from "./bounded-anchor"
 import { SETTER_CUTOUT_RADIUS, SETTER_TOP, SETTER_XY } from "./tool-setter"
@@ -72,6 +72,7 @@ export class MakeraZ1 extends FixtureKit {
   }
   override readonly zProbing = {
     tools: [PROBE_TOOL, PROBE_3D_TOOL],
+    pointNc: boundedPointZNc,
     boundedNc: boundedZNc,
     measurementNc: zProbeMeasurementNc,
   }

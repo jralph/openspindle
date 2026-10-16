@@ -33,7 +33,8 @@ function machineOver(peer: Peer<MachineContract>): MachineHost {
     reset: () => peer.call("machine.reset", undefined),
     prepare: (source) => peer.call("machine.prepare", { source }),
     run: (request) => peer.call("machine.run", request),
-    dismissJob: () => peer.call("machine.dismissJob", undefined),
+    dismissJob: (expectedJobId) =>
+      peer.call("machine.dismissJob", expectedJobId),
     readAnchors: (signal) =>
       peer.call("machine.readAnchors", undefined, signal ? { signal } : {}),
     writeAnchors: (request) => peer.call("machine.writeAnchors", request),

@@ -3,7 +3,11 @@ import { createPlate } from "@/domain/plate/plate"
 import type { PlateSetup } from "@/domain/plate/plate"
 import type { FixtureKit } from "@/domain/fixtures/fixture-kit"
 import type { Tool } from "@/domain/tools/tool"
-import type { ProbeCheckBinding, ZProbeSettings } from "@/machine/contract"
+import type {
+  PointZProbePlan,
+  ProbeCheckBinding,
+  ZProbeSettings,
+} from "@/machine/contract"
 
 /** Standalone temporary plate, never added to the project or composed with cutting. */
 export function zProbeRun(
@@ -13,11 +17,19 @@ export function zProbeRun(
   number: number,
   settings: ZProbeSettings,
   binding: ProbeCheckBinding | null,
-  stage: "setter" | "contacts"
+  stage: "setter" | "contacts",
+  pointPlan?: PointZProbePlan
 ) {
   if (!kit.zProbing) throw new Error("This machine has no bounded Z routine.")
   if (stage === "contacts" && !binding)
     throw new Error("Verify the probe signal first.")
+  let nc: string
+  if (stage === "setter") nc = kit.zProbing.measurementNc(number)
+  else if (pointPlan) {
+    if (!kit.zProbing.pointNc)
+      throw new Error("This machine has no automatic point Z routine.")
+    nc = kit.zProbing.pointNc(binding!, pointPlan)
+  } else nc = kit.zProbing.boundedNc(binding!, settings)
   const plate = createPlate({
     ...setup,
     probeBeforeRun: false,
@@ -36,10 +48,7 @@ export function zProbeRun(
         kind: "file",
         park: false,
         phase: "setup",
-        nc:
-          stage === "setter"
-            ? kit.zProbing.measurementNc(number)
-            : kit.zProbing.boundedNc(binding!, settings),
+        nc,
       },
       { tools: [{ local: number, plate: number }] }
     ),

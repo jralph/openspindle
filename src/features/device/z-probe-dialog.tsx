@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   Field,
@@ -30,7 +31,11 @@ import {
   ZProbeSettingsSchema,
 } from "@/machine/contract"
 import type { ZProbeSettings } from "@/machine/contract"
-import { useMachineHost, useMachineSnapshot } from "@/platform/machine"
+import {
+  useCachedConfiguration,
+  useMachineHost,
+  useMachineSnapshot,
+} from "@/platform/machine"
 import { AppDialog } from "@/features/shell/app-dialog"
 import { openDialog } from "@/features/shell/dialogs"
 import { useRunJob } from "@/features/job/job-hooks"
@@ -48,6 +53,7 @@ import type { PointIntent } from "@/features/prepare/point-intent"
 import {
   pointFrameIssue,
   pointMachineXY,
+  pointZProbePlan,
 } from "@/features/prepare/point-positioning"
 
 type Draft = {
@@ -58,13 +64,15 @@ type Draft = {
   settings: ZProbeSettings
   job?: ZProbeJob
   point?: PointIntent
+  risk: boolean
 }
 const draftAtom = createAtom<Draft>({
   step: 0,
   toolId: "",
   signalId: "",
   signalTool: "",
-  settings: { gap: 5, travel: 6, clearance: 5 },
+  settings: { travel: 105, clearance: 5 },
+  risk: false,
 })
 const update = (patch: Partial<Draft>) =>
   draftAtom.set((value) => ({ ...value, ...patch }))
@@ -77,7 +85,7 @@ function probeLabel(profile: ReturnType<typeof probeProfile>) {
 
 /** Entry points preserve an active temporary run but start a new intent explicitly. */
 export function openZProbe(job?: ZProbeJob, point?: PointIntent) {
-  update({ step: 0, signalId: "", signalTool: "", job, point })
+  update({ step: 0, signalId: "", signalTool: "", job, point, risk: false })
   openDialog({ kind: "z-probe" })
 }
 
@@ -92,14 +100,22 @@ export function ZProbeDialog({
   const draft = useSelector(draftAtom)
   useEffect(() => {
     if (job)
-      update({ job, point: undefined, step: 0, signalId: "", signalTool: "" })
+      update({
+        job,
+        point: undefined,
+        step: 0,
+        signalId: "",
+        signalTool: "",
+        risk: false,
+      })
   }, [job])
   const workspace = useWorkspace((value) => value)
   const workspaceStore = useWorkspaceStore()
   const fixtures = useFixtureLibrary((value) => value)
-  const placement = projectPlacement(workspace, fixtures)
+  const placement = draft.point?.setup ?? projectPlacement(workspace, fixtures)
   const kit = kitForSetup(placement)
   const machine = useMachineSnapshot()
+  const configuration = useCachedConfiguration(machine.connection.id)
   const host = useMachineHost()
   const navigate = useNavigate()
   const cutting = useRunJob()
@@ -107,7 +123,7 @@ export function ZProbeDialog({
   const form = useProbingForm(
     draft.settings,
     ZProbeSettingsSchema,
-    (settings) => update({ settings }),
+    (settings) => update({ settings, risk: false }),
     setValid
   )
   const tools = workspace.tools.filter(isProbe).flatMap((tool) => {
@@ -131,8 +147,12 @@ export function ZProbeDialog({
     binding.id === draft.signalId &&
     tool?.id === draft.signalTool
   const stage: "setter" | "contacts" = draft.step === 0 ? "setter" : "contacts"
+  const pointPlan =
+    draft.point && pointZProbePlan(draft.point, configuration, draft.settings)
   const input =
-    tool && number !== undefined && (stage === "setter" || verified)
+    tool &&
+    number !== undefined &&
+    (stage === "setter" || (verified && (!draft.point || pointPlan)))
       ? {
           setup: createPlateSetup({
             ...placement,
@@ -144,6 +164,7 @@ export function ZProbeDialog({
           settings: draft.settings,
           binding,
           stage,
+          pointPlan: stage === "contacts" ? pointPlan : undefined,
         }
       : null
   const inputKey = JSON.stringify(input)
@@ -157,7 +178,8 @@ export function ZProbeDialog({
       held.number,
       held.settings,
       held.binding,
-      held.stage
+      held.stage,
+      held.pointPlan ?? undefined
     )
   }, [inputKey, kit])
   const intentKey = JSON.stringify({ job: draft.job, point: draft.point })
@@ -196,18 +218,9 @@ export function ZProbeDialog({
       workspace.plates.find((plate) => plate.id === draft.point!.plateId),
       machine
     )
-    if (
-      !reason &&
-      draft.step === 1 &&
-      (!pickedXY ||
-        !status?.machine ||
-        Math.hypot(
-          status.machine.x - pickedXY[0],
-          status.machine.y - pickedXY[1]
-        ) > 1)
-    )
+    if (!reason && draft.step === 1 && !owned && !pointPlan)
       reason =
-        "Manually position within 1 mm of the picked XY before probing Z. Use the Device controls or the reviewed Jog to X / Y guide."
+        "Read the device configuration and anchors to prepare the automatic route."
   }
   if (!reason && draft.job) {
     const target = workspace.plates.find(
@@ -261,6 +274,16 @@ export function ZProbeDialog({
       )
         throw new Error(
           "The completed contacts, measured probe and final Z clearance could not be verified. Nothing else was started."
+        )
+      if (
+        draft.point &&
+        (!pickedXY ||
+          !t.machine ||
+          Math.hypot(t.machine.x - pickedXY[0], t.machine.y - pickedXY[1]) >
+            0.003)
+      )
+        throw new Error(
+          "The completed Z contacts are not at the picked XY. Nothing else was started."
         )
       if (
         JSON.stringify(
@@ -335,7 +358,7 @@ export function ZProbeDialog({
         <FieldDescription>
           {draft.step === 0
             ? "1 · Fit and measure the probe"
-            : "2 · Position, verify signal and probe Z"}
+            : "2 · Verify signal and probe Z"}
         </FieldDescription>
         {reason && (
           <Alert variant="warning">
@@ -354,7 +377,7 @@ export function ZProbeDialog({
                   label: `${entry.name} · ${probeLabel(profile)}`,
                 }))}
                 onValueChange={(toolId) =>
-                  update({ toolId, signalId: "", signalTool: "" })
+                  update({ toolId, signalId: "", signalTool: "", risk: false })
                 }
               />
             </Field>
@@ -395,20 +418,19 @@ export function ZProbeDialog({
         )}
         {!owned && draft.step === 1 && (
           <>
-            <ProbeSafetyNotice />
+            <ProbeSafetyNotice automatic={!!draft.point} />
             {draft.point && pickedXY && (
               <FieldDescription className="font-numeric">
-                Picked model surface Z {draft.point.position[2].toFixed(3)} mm;
-                manually position at machine X {pickedXY[0].toFixed(3)}, Y{" "}
-                {pickedXY[1].toFixed(3)} mm. The actual surface height comes
-                from the contacts.
+                Automatic target: machine X {pickedXY[0].toFixed(3)}, Y{" "}
+                {pickedXY[1].toFixed(3)} mm. Model Z is not used; the contacts
+                determine the surface height.
               </FieldDescription>
             )}
             <p>
-              Using Device controls, position the tip above a solid, clear point
-              on the part's top, roughly 5 mm above it. Keep away from holes,
-              edges and clamps. This routine moves only Z. The touched surface
-              becomes Z0; it does not find X or Y.
+              {draft.point
+                ? "Verify the signal at the current stationary position. Run first raises the probe to machine clearance, moves X then Y to the picked point at full positioning speed, then probes down from that raised height. Check the entire route and choose a solid surface clear of holes, edges and clamps."
+                : "Position over a solid, clear point on the part. You can start from any height above it; there is no required 5 mm gap. This routine moves only Z. Keep away from holes, edges and clamps."}{" "}
+              The touched surface becomes work Z0.
             </p>
             {selected?.profile?.contact === "conductive" && (
               <Alert>
@@ -422,8 +444,7 @@ export function ZProbeDialog({
             )}
             {(
               [
-                ["gap", "Estimated gap above part", 0.1, 5, 5],
-                ["travel", "Maximum downward search", 0.4, 10, 6],
+                ["travel", "Maximum downward search", 0.4, 105, 105],
                 ["clearance", "Lift above measured surface", 0.5, 10, 5],
               ] as const
             ).map(([name, label, min, max, initial]) => (
@@ -444,10 +465,27 @@ export function ZProbeDialog({
               />
             ))}
             <FieldDescription>
-              Search travel must exceed the estimated gap. It limits commanded
-              distance, not force or compression if the signal fails. No tool
-              change occurs after positioning.
+              The downward search stops on contact or at the chosen maximum,
+              shortened to stay above the machine's reported lower Z limit. No
+              contact means failure without setting Z0. From a high start, the
+              slow search can take several minutes. No tool change occurs.
             </FieldDescription>
+            {draft.point && (
+              <Field orientation="horizontal">
+                <Checkbox
+                  id={`${id}-risk`}
+                  checked={draft.risk}
+                  onCheckedChange={(checked) =>
+                    update({ risk: checked === true })
+                  }
+                />
+                <FieldLabel htmlFor={`${id}-risk`}>
+                  I confirm the probe is fitted and measured, the enclosure is
+                  closed, the complete raised route and target are clear, and I
+                  accept the risks of automatic positioning and probing.
+                </FieldLabel>
+              </Field>
+            )}
             <Button
               variant="outline"
               onClick={() => void navigate({ to: "/device" })}
@@ -464,10 +502,13 @@ export function ZProbeDialog({
               />
             )}
             <ReasonButton
-              label="Probe part Z"
+              label={draft.point ? "Move to point and probe Z" : "Probe part Z"}
               reason={
                 reason ??
                 (!valid ? "Correct the search settings." : null) ??
+                (draft.point && !draft.risk
+                  ? "Confirm the automatic route and setup first."
+                  : null) ??
                 (!verified
                   ? "Position and verify the probe signal first."
                   : null) ??
@@ -475,11 +516,11 @@ export function ZProbeDialog({
               }
               onClick={() => runner.run.mutate("contacts")}
             >
-              Probe part Z
+              {draft.point ? "Move to point and probe Z" : "Probe part Z"}
             </ReasonButton>
             <Button
               variant="outline"
-              onClick={() => update({ step: 0, signalId: "" })}
+              onClick={() => update({ step: 0, signalId: "", risk: false })}
             >
               Back
             </Button>
@@ -489,6 +530,9 @@ export function ZProbeDialog({
           <CalibrationRunPanel
             runner={runner}
             contactTitle="Probe part Z"
+            positioningLabel={
+              draft.point ? "Continue to route review" : "Continue to Z probing"
+            }
             onMeasured={() => update({ step: 1, signalId: "" })}
           />
         )}

@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import { createAtom, useSelector } from "@tanstack/react-store"
 import { useMutation } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -65,6 +65,68 @@ function sameConnection(snapshot: MachineSnapshot, connectionId: string) {
     throw new Error(
       "The device connection changed. No following calibration step was sent."
     )
+}
+
+/** Mounted once: a failed temporary run cannot strand a lock in a closed guide. */
+export function useCalibrationRunRecovery() {
+  const host = useMachineHost()
+  const snapshot = useMachineSnapshot()
+  const record = useCalibrationRunRecord()
+  const attempted = useRef<string | null>(null)
+  useEffect(() => {
+    if (!record || record.pending || attempted.current === record.session.runId)
+      return
+    const failed = (fresh: MachineSnapshot) => {
+      const job = fresh.job
+      if (job?.id !== record.session.runId)
+        return !!record.error || record.cancelled || record.sent
+      if (!isTerminalJobPhase(job.phase)) return false
+      if (job.phase === "completed" && !record.error && !record.cancelled)
+        return false
+      // A disconnected machine may still be running. Wait for reconnection and
+      // confirmed stopped telemetry before forgetting that uncertain outcome.
+      if (job.phase === "lost" || fresh.connection.id !== record.connectionId) {
+        const t = fresh.telemetry
+        return (
+          fresh.connection.status === "connected" &&
+          isFresh(t, Date.now()) &&
+          t.state === "Idle" &&
+          t.job === null &&
+          t.spindleOn === false &&
+          t.spindleRpm === 0
+        )
+      }
+      return true
+    }
+    if (!failed(snapshot)) return
+    attempted.current = record.session.runId
+    void (async () => {
+      const fresh = await host.snapshot()
+      if (
+        runAtom.get()?.session.runId !== record.session.runId ||
+        !failed(fresh)
+      ) {
+        attempted.current = null
+        return
+      }
+      const detail =
+        fresh.job?.id === record.session.runId ? fresh.job.error : record.error
+      // This only removes terminal bookkeeping. It sends no Stop, unlock, home
+      // or motion commands, and the controller's machine lockout stays intact.
+      await host.dismissJob(record.session.runId)
+      if (jobSessionStore.state?.runId === record.session.runId)
+        jobSessionStore.actions.clear()
+      if (runAtom.get()?.session.runId === record.session.runId)
+        runAtom.set(() => null)
+      toast.error(detail ?? "Temporary run ended without a verified result.", {
+        description:
+          "Temporary run cleared. Check the machine before starting again; nothing was retried or unlocked.",
+        duration: 12000,
+      })
+    })().catch((error: unknown) =>
+      toast.error(`Could not clear the temporary run: ${message(error)}`)
+    )
+  }, [host, record, snapshot])
 }
 
 /** Explicit Run uses the existing checked job engine without adding a workspace plate. */
@@ -224,7 +286,7 @@ export function useCalibrationRun(
           throw new Error(
             "Check that the machine has stopped. Dismiss the lost run once it reports Idle with the spindle off."
           )
-        await host.dismissJob()
+        await host.dismissJob(current.session.runId)
       }
       if (jobSessionStore.state?.runId === current.session.runId)
         jobSessionStore.actions.clear()

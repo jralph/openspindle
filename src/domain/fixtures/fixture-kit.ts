@@ -2,6 +2,7 @@ import type {
   NcWord,
   ProbeCheckBinding,
   ProbeMovePlan,
+  PointZProbePlan,
   ZProbeSettings,
 } from "@/machine/contract"
 import type { FixtureDefinition } from "@/domain/fixtures/definitions"
@@ -98,6 +99,10 @@ export abstract class FixtureKit {
     ) => string
   } | null = null
   readonly zProbing: {
+    readonly pointNc?: (
+      binding: ProbeCheckBinding,
+      plan: PointZProbePlan
+    ) => string
     readonly tools: readonly number[]
     readonly boundedNc: (
       binding: ProbeCheckBinding,

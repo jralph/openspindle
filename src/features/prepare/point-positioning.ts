@@ -4,6 +4,8 @@ import type {
   ProbeCheckBinding,
   ProbeMovePlan,
   FirmwareConfiguration,
+  PointZProbePlan,
+  ZProbeSettings,
 } from "@/machine/contract"
 import { limitsFor } from "@/app/job/plan-store"
 import { kitForSetup } from "@/domain/fixtures/catalog"
@@ -129,5 +131,22 @@ export function pointMovePlan(
       ),
     ],
     feed,
+  }
+}
+
+/** The model supplies XY only; the bounded contacts determine the real surface. */
+export function pointZProbePlan(
+  intent: PointIntent,
+  configuration: FirmwareConfiguration | null,
+  settings: ZProbeSettings
+): PointZProbePlan | null {
+  const kit = kitForSetup(intent.setup)
+  const xy = pointMachineXY(intent)
+  const motion = limitsFor(kit, configuration)
+  if (!kit.zProbing?.pointNc || !xy || !motion) return null
+  return {
+    target: [...xy],
+    feed: [...motion.axisRate],
+    settings,
   }
 }

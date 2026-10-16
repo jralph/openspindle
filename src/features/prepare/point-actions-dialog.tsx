@@ -28,6 +28,7 @@ import {
 } from "@/features/device/use-calibration-run"
 import { CalibrationRunPanel } from "@/features/device/calibration-run-panel"
 import { zProbeRun } from "@/features/device/z-probe-run"
+import { openZProbe } from "@/features/device/z-probe-dialog"
 import { StopButton } from "@/features/job/stage-card"
 import {
   measuredPointProbe,
@@ -294,8 +295,16 @@ function PointPositioning({
             <p>
               {intent.action === "xy"
                 ? "First retract to the machine's upper clearance (or keep an already higher Z), then move X and Y separately at 100% of their configured maximum speeds. Z stays retracted afterwards."
-                : "Keep X and Y fixed over the picked point. Move Z at 20% of its configured maximum to 5 mm above the model surface. The model height is an estimate, not a measured surface."}
+                : "Keep X and Y fixed over the picked point. Move Z at 20% of its configured maximum to 5 mm above the modeled surface. This is positioning, not a surface measurement: contact stops and fails the run without setting Z0. The 5 mm clearance depends on the real work Z reference matching the model; tool-setter detection alone does not establish that reference."}
             </p>
+            {intent.action === "z" && (
+              <Button
+                variant="outline"
+                onClick={() => openZProbe(undefined, intent)}
+              >
+                Probe part Z here instead…
+              </Button>
+            )}
             {plan && (
               <FieldDescription className="font-numeric">
                 Machine endpoint: X {plan.target[0].toFixed(3)}, Y{" "}

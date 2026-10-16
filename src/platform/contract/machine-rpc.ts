@@ -126,7 +126,7 @@ export const machineMethods = {
     timeoutMs: 1_200_000,
   },
   "machine.dismissJob": {
-    params: none,
+    params: z.uuid().optional(),
     result: MachineSnapshotSchema,
     timeoutMs: 15_000,
   },

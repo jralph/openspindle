@@ -9,6 +9,7 @@ import { boundedDiameterRequirement } from "./bounded-diameter.ts"
 import { boundedAnchorRequirement } from "./bounded-anchor.ts"
 import { boundedZRequirement } from "./bounded-z.ts"
 import { boundedMoveRequirement } from "./bounded-move.ts"
+import { boundedPointZRequirement } from "./bounded-point-z.ts"
 
 const UNINSPECTED_EXECUTION =
   "Direct file and macro execution cannot verify the program's probing safety. Prepare the program and Run from Job so its contents can be checked."
@@ -65,9 +66,12 @@ export const assessMakeraPhysicalProgram: NonNullable<
   FirmwareAdapter["assessPhysicalProgram"]
 > = (source, program) => {
   try {
+    const pointZ = boundedPointZRequirement(source, program)
+    if (pointZ) return { issue: null, ...pointZ }
+    const z = boundedZRequirement(source, program)
+    if (z) return { issue: null, probeCheck: z, probeDownToLimit: true }
     const probeCheck =
       boundedMoveRequirement(source, program) ??
-      boundedZRequirement(source, program) ??
       boundedDiameterRequirement(source, program) ??
       boundedAnchorRequirement(source, program)
     if (probeCheck) return { issue: null, probeCheck }
