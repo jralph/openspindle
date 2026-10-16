@@ -35,6 +35,8 @@ import { followDeviceAnchors } from "@/app/workspace/project-session"
 import { useWorkspaceStore } from "@/app/workspace/workspace-context"
 import { withMovedAnchor } from "@/domain/anchors/stored-anchors"
 import type { BedSetupAnchor } from "@/domain/anchors/stored-anchors"
+import type { AnchorCalibration } from "@/domain/anchors/calibration"
+import { calibrationAnchorsMatch } from "@/domain/anchors/calibration"
 import { WORKSPACE_PROFILE } from "@/domain/fixtures/profiles"
 import type { Plate } from "@/domain/plate/plate"
 import { toMicrometre } from "@/domain/primitives"
@@ -69,6 +71,8 @@ export function SaveAsAnchor({
   position,
   plate,
   deviceId,
+  calibration,
+  measurementRunId,
 }: {
   /** The machine X and Y the probing found. */
   position: readonly [number, number]
@@ -76,6 +80,8 @@ export function SaveAsAnchor({
   plate: Plate
   /** The originating device frozen by Run, including for an unanchored plate. */
   deviceId: string | null
+  calibration?: AnchorCalibration
+  measurementRunId?: string
 }) {
   const id = useId()
   const machine = useMachineSnapshot()
@@ -121,8 +127,10 @@ export function SaveAsAnchor({
     toMicrometre(position[1]),
   ]
   const [origin] = live.anchors
-  const deviceChoice = live.anchors.find(
-    (anchor) => choice === `device:${anchor.id}`
+  const deviceChoice = live.anchors.find((anchor) =>
+    calibration
+      ? anchor.id === calibration.anchorId
+      : choice === `device:${anchor.id}`
   )
   const kept =
     bedSetup?.anchors.find((anchor) => choice === `bed:${anchor.id}`) ?? null
@@ -135,7 +143,12 @@ export function SaveAsAnchor({
   ]
   // A device anchor moves where it was found; the others follow the first unless they stay.
   const next = chosen
-    ? withMovedAnchor(live.anchors, chosen.id, found, follow)
+    ? withMovedAnchor(
+        live.anchors,
+        chosen.id,
+        found,
+        calibration ? true : follow
+      )
     : live.anchors
   // A bed setup's anchor is kept from the device's first anchor.
   const offset: [number, number] = [
@@ -219,6 +232,22 @@ export function SaveAsAnchor({
         "The stored anchors changed. Review Save as anchor again."
       )
     if (
+      calibration &&
+      (calibration.deviceId !== deviceId ||
+        !calibrationAnchorsMatch(
+          calibration.expectedAnchors,
+          fresh.anchors.value
+        ) ||
+        !fresh.anchors.value.anchors.some(
+          (anchor) => anchor.id === calibration.anchorId
+        ) ||
+        fresh.job?.phase !== "completed" ||
+        fresh.job.id !== measurementRunId)
+    )
+      throw new Error(
+        "The calibration's device or anchor configuration changed. Prepare a fresh calibration before saving."
+      )
+    if (
       bedSetup &&
       (fixtures.state.selectedId !== profileId ||
         currentBedSetups()?.find((setup) => setup.id === bedSetup.id) !==
@@ -241,7 +270,7 @@ export function SaveAsAnchor({
         })),
       })
       // Apply the proposal's local change only to the profile it reviewed.
-      if (first && !follow && bedSetup) {
+      if (first && !calibration && !follow && bedSetup) {
         if (
           fixtures.state.selectedId !== profileId ||
           JSON.stringify(currentBedSetups()) !==
@@ -276,21 +305,41 @@ export function SaveAsAnchor({
       `Saved as ${kept?.name ?? newAnchor?.name} of ${bedSetup.name}.`
     )
   }
-  const confirmReason = deviceReason ?? (chosen ? writeReason : null)
+  const calibrationReason =
+    calibration &&
+    (calibration.deviceId !== deviceId ||
+      !calibrationAnchorsMatch(calibration.expectedAnchors, live) ||
+      !deviceChoice ||
+      machine.job?.phase !== "completed" ||
+      machine.job.id !== measurementRunId)
+      ? "Complete this calibration on its original device with unchanged anchors before saving."
+      : null
+  const confirmReason =
+    deviceReason ?? calibrationReason ?? (chosen ? writeReason : null)
   const saveLabel = chosen ? "Write anchors" : "Save anchor"
   const buttonLabel = pending ? "Writing…" : saveLabel
   return (
     <>
       <ReasonButton
-        label="Save as anchor"
+        label={
+          calibration
+            ? `Save as ${deviceChoice?.name ?? "calibrated anchor"}`
+            : "Save as anchor"
+        }
         variant="outline"
         size="sm"
         className="self-start"
-        reason={deviceReason ?? (bedSetup ? null : writeReason)}
+        reason={
+          calibration
+            ? confirmReason
+            : (deviceReason ?? (bedSetup ? null : writeReason))
+        }
         disabled={pending}
         onClick={() => setOpen(true)}
       >
-        Save as anchor
+        {calibration
+          ? `Save as ${deviceChoice?.name ?? "calibrated anchor"}`
+          : "Save as anchor"}
       </ReasonButton>
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>
@@ -307,41 +356,49 @@ export function SaveAsAnchor({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <FieldGroup>
-            <Field orientation="horizontal">
-              <FieldLabel htmlFor={`${id}-anchor`}>Anchor</FieldLabel>
-              <OptionSelect
-                id={`${id}-anchor`}
-                className="ml-auto w-56"
-                options={[
-                  ...live.anchors.map((anchor) => ({
-                    value: `device:${anchor.id}`,
-                    label: anchor.name,
-                  })),
-                  ...(bedSetup
-                    ? [
-                        ...bedSetup.anchors.map((anchor) => ({
-                          value: `bed:${anchor.id}`,
-                          label: anchor.name,
-                        })),
-                        {
-                          value: NEW_ANCHOR,
-                          label: `New anchor in ${bedSetup.name}`,
-                        },
-                      ]
-                    : []),
-                ]}
-                value={
-                  chosen
-                    ? `device:${chosen.id}`
-                    : kept
-                      ? `bed:${kept.id}`
-                      : NEW_ANCHOR
-                }
-                disabled={pending}
-                onValueChange={setChoice}
-              />
-            </Field>
-            {first && others.length > 0 && (
+            {!calibration && (
+              <Field orientation="horizontal">
+                <FieldLabel htmlFor={`${id}-anchor`}>Anchor</FieldLabel>
+                <OptionSelect
+                  id={`${id}-anchor`}
+                  className="ml-auto w-56"
+                  options={[
+                    ...live.anchors.map((anchor) => ({
+                      value: `device:${anchor.id}`,
+                      label: anchor.name,
+                    })),
+                    ...(bedSetup
+                      ? [
+                          ...bedSetup.anchors.map((anchor) => ({
+                            value: `bed:${anchor.id}`,
+                            label: anchor.name,
+                          })),
+                          {
+                            value: NEW_ANCHOR,
+                            label: `New anchor in ${bedSetup.name}`,
+                          },
+                        ]
+                      : []),
+                  ]}
+                  value={
+                    chosen
+                      ? `device:${chosen.id}`
+                      : kept
+                        ? `bed:${kept.id}`
+                        : NEW_ANCHOR
+                  }
+                  disabled={pending}
+                  onValueChange={setChoice}
+                />
+              </Field>
+            )}
+            {calibration && (
+              <p>
+                Save the measured X/Y as {deviceChoice?.name}. The other anchors
+                retain their offsets and move with it.
+              </p>
+            )}
+            {!calibration && first && others.length > 0 && (
               <Field orientation="horizontal">
                 <Checkbox
                   id={`${id}-follow`}

@@ -435,6 +435,14 @@ function operationResults(
       description = probed.description
       facts.push(...probed.facts)
       found = probed.found
+      if (
+        source.anchorCalibration &&
+        (source.params.routine !== "inside-corner" ||
+          source.params.corner !== "front-left" ||
+          source.params.axes !== "xy" ||
+          source.params.placement.kind !== "probe-position")
+      )
+        found = null
     } else {
       description =
         missing?.reason ??
@@ -501,11 +509,13 @@ function operationResults(
         {settings && <OperationSettingsRow settings={settings} />}
         {facts.length > 0 && <HeightMapFacts facts={facts} />}
         {grid && <HeightMapGrid map={gridMap(grid)} compact />}
-        {found && (
+        {found && source.kind === "probing" && source.task === "origin" && (
           <SaveAsAnchor
             position={found}
             plate={subject.plate}
             deviceId={subject.device?.id ?? null}
+            calibration={source.anchorCalibration}
+            measurementRunId={report?.jobId}
           />
         )}
       </>

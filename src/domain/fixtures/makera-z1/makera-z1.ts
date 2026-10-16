@@ -62,6 +62,12 @@ export const LEGACY_BED_FRAME = { anchor1: [12, 12], z: 6 } as const
  * the fixtures Makera makes for it and its anchors.
  */
 export class MakeraZ1 extends FixtureKit {
+  override readonly anchorCalibration = {
+    anchorId: "anchor-1",
+    name: "Anchor 1",
+    reference:
+      "The supplied L-bracket, pinned and secured in its normal Anchor 1 position",
+  } as const
   override readonly facingEntryPockets = Z1_MDF_ENTRY_POCKETS
   /** A conservative square around the modeled setter opening, with 2 mm minimum clearance. */
   override readonly facingKeepOuts: readonly FacingKeepOut[] = [

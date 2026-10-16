@@ -83,6 +83,12 @@ export type FacingKeepOut = {
 }
 
 export abstract class FixtureKit {
+  /** The machine's supported physical reference for an inside-corner anchor calibration. */
+  readonly anchorCalibration: {
+    readonly anchorId: string
+    readonly name: string
+    readonly reference: string
+  } | null = null
   /** Modeled recesses only: the operator must verify clearance on the installed bed. */
   readonly facingEntryPockets: readonly {
     readonly name: string

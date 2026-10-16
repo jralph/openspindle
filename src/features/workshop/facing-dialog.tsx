@@ -165,6 +165,44 @@ function FacingFields({
   return (
     <FieldGroup>
       <Field>
+        <FieldLabel htmlFor={`${id}-pattern`}>Facing pattern</FieldLabel>
+        <form.Field name="pattern">
+          {(field) => (
+            <OptionSelect
+              id={`${id}-pattern`}
+              value={field.state.value ?? "horizontal"}
+              options={[
+                { value: "horizontal", label: "Horizontal · X" },
+                { value: "vertical", label: "Vertical · Y" },
+                { value: "cross-hatch", label: "Cross-hatch · X then Y" },
+              ]}
+              onValueChange={field.handleChange}
+            />
+          )}
+        </form.Field>
+        <FieldDescription>
+          Cross-hatch cuts both directions at the same Z for each depth pass. It
+          does not double the removal.
+        </FieldDescription>
+      </Field>
+      <form.Field name="borderFirst">
+        {(field) => (
+          <Field orientation="horizontal">
+            <Checkbox
+              id={`${id}-border`}
+              checked={field.state.value ?? false}
+              disabled={value.entryMode !== "pocket"}
+              onCheckedChange={(checked) =>
+                field.handleChange(checked === true)
+              }
+            />
+            <FieldLabel htmlFor={`${id}-border`}>
+              Border first · requires a verified cleared pocket
+            </FieldLabel>
+          </Field>
+        )}
+      </form.Field>
+      <Field>
         <FieldLabel>Entry method</FieldLabel>
         <form.Field name="entryMode">
           {(field) => (
@@ -176,6 +214,7 @@ function FacingFields({
                 const mode = values[0]
                 if (mode !== "outside" && mode !== "pocket") return
                 if (mode === "outside") {
+                  form.setFieldValue("borderFirst", false)
                   form.setFieldValue("entryX", undefined)
                   form.setFieldValue("entryY", undefined)
                   form.setFieldValue("entryDiameter", undefined)
@@ -433,9 +472,9 @@ export function FacingDialog({
               .join(", ")}
             , including the cutter radius and at least{" "}
             {Math.max(...kit.facingKeepOuts.map((area) => area.margin))} mm
-            clearance. Protected rows retract and re-enter in clear space;
-            travel clears the modeled equipment top. The protected patch stays
-            unfaced.
+            clearance. Pocket entry connects rows at cutting feed around
+            protected areas; travel clears the modeled equipment top. The
+            protected patch stays unfaced.
           </FieldDescription>
         )}
         {!plate && (

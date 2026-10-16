@@ -10,6 +10,7 @@ import {
   facingEntryFrameIssue,
   facingRaster,
   facingToolIssue,
+  facingCentreBounds,
 } from "./facing"
 import { workOriginOnMachine } from "../plate/work-origin"
 
@@ -66,11 +67,11 @@ export const facingKind: OperationKind<"facing"> = {
       issue = `Spindle RPM must be ${kit.spindleRange.min}–${kit.spindleRange.max} for ${kit.name}.`
     if (!issue) issue = facingEntryFrameIssue(p, plate.setup)
     if (!issue) issue = facingPocketPaths(p, keepOuts).issue
-    const raster = facingRaster(p, keepOuts)
-    const left = raster.left + plate.setup.workOrigin[0]
-    const right = raster.right + plate.setup.workOrigin[0]
-    const front = p.y + plate.setup.workOrigin[1]
-    const back = front + p.depth
+    const bounds = facingCentreBounds(p)
+    const left = bounds.min[0] + plate.setup.workOrigin[0]
+    const right = bounds.max[0] + plate.setup.workOrigin[0]
+    const front = bounds.min[1] + plate.setup.workOrigin[1]
+    const back = bounds.max[1] + plate.setup.workOrigin[1]
     if (
       !issue &&
       (left < kit.workAreaOrigin[0] ||

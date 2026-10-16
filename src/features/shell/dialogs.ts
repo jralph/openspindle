@@ -21,6 +21,8 @@ export type WorkspaceDialog =
       readonly operationId?: string
     }
   | { readonly kind: "device" }
+  | { readonly kind: "anchor-calibration" }
+  | { readonly kind: "probe-diameter-calibration" }
   | { readonly kind: "device-configuration" }
   /** The Models library; closing it goes back to the dialog it opened from. */
   | { readonly kind: "models"; readonly back?: WorkspaceDialog }

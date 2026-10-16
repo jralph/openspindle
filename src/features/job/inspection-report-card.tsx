@@ -45,6 +45,7 @@ import { useHost } from "@/platform/host-context"
 import { inspectionReport } from "./inspection-report"
 import type { JobSubject, JobView } from "./job-view"
 import { openDialog } from "@/features/shell/dialogs"
+import { useDiameterCalibrationPlate } from "@/features/device/probe-diameter-calibration-dialog"
 
 const mm = (value: number | null | undefined) =>
   value === null || value === undefined ? "—" : `${value.toFixed(4)} mm`
@@ -396,6 +397,7 @@ export function InspectionReportCard({
   subject: JobSubject | null
 }) {
   const report = useMemo(() => inspectionReport(view), [view])
+  const calibrationPlate = useDiameterCalibrationPlate()
   const hasInspection = subject?.plate.operations.some(
     ({ source }) =>
       source.kind === "probing" &&
@@ -435,6 +437,16 @@ export function InspectionReportCard({
         view.outcome === "completed" &&
         view.session && (
           <CardFooter className="flex flex-wrap gap-2">
+            {calibrationPlate === report.plateId && (
+              <Button
+                variant="outline"
+                onClick={() =>
+                  openDialog({ kind: "probe-diameter-calibration" })
+                }
+              >
+                Continue diameter calibration
+              </Button>
+            )}
             {report.features
               .filter(
                 (feature) =>

@@ -19,6 +19,8 @@ export const FacingParamsSchema = z
     removal: z.number().min(0.001).max(100),
     stepdown: z.number().min(0.001).max(100),
     stepover: z.number().min(0.001).max(500),
+    pattern: z.enum(["horizontal", "vertical", "cross-hatch"]).optional(),
+    borderFirst: z.boolean().optional(),
     diameter: z.number().min(0.001).max(500),
     clearance: z.number().min(0.001).max(500),
     rpm: z.number().int().positive().max(100000),
@@ -40,6 +42,13 @@ export const FacingParamsSchema = z
       .optional(),
   })
   .superRefine((p, ctx) => {
+    if (p.borderFirst && p.entryMode !== "pocket")
+      ctx.addIssue({
+        code: "custom",
+        path: ["borderFirst"],
+        message:
+          "A connected border pass requires a verified cleared-pocket entry.",
+      })
     if (p.entryMode === "pocket") {
       const issue = (path: string, message: string) =>
         ctx.addIssue({ code: "custom", path: [path], message })
@@ -79,11 +88,12 @@ export const FacingParamsSchema = z
         path: ["stepover"],
         message: "Use at most half the cutter diameter for the facing raster.",
       })
-    if (
-      Math.ceil(p.removal / p.stepdown) *
-        (Math.ceil(p.depth / p.stepover) + 1) >
-      20000
-    )
+    const horizontalRows = Math.ceil(p.depth / p.stepover) + 1
+    const verticalRows = Math.ceil(p.width / p.stepover) + 1
+    let rowCount = horizontalRows
+    if (p.pattern === "vertical") rowCount = verticalRows
+    if (p.pattern === "cross-hatch") rowCount += verticalRows
+    if (Math.ceil(p.removal / p.stepdown) * rowCount > 20000)
       ctx.addIssue({
         code: "custom",
         path: ["stepover"],
@@ -267,8 +277,8 @@ function pocketRoute(
   return null
 }
 
-/** Every span re-enters the verified empty pocket; no vertical entry into MDF is generated. */
-export function facingPocketPaths(
+/** One connected raster per layer, entered only through the verified empty pocket. */
+function horizontalPocketPaths(
   p: FacingParams,
   keepOuts: readonly FacingKeepOut[]
 ): { issue: string | null; paths: XY[][] } {
@@ -292,23 +302,195 @@ export function facingPocketPaths(
     min: [raster.left, p.y] as const,
     max: [raster.right, p.y + p.depth] as const,
   }
-  const paths: XY[][] = []
-  for (const row of raster.rows) {
-    for (const [start, end] of row.spans) {
-      const route = pocketRoute(entry, [start, row.y], bounds, raster.expanded)
+  const path: XY[] = [entry]
+  let current = entry
+  for (const [index, row] of raster.rows.entries()) {
+    // Clipped spans may be stored in either direction. Alternate the complete
+    // row so adjacent unobstructed rows share a short, cutting-feed Y link.
+    const spans = row.spans.map(([a, b]) => [Math.min(a, b), Math.max(a, b)])
+    if (index % 2 !== 0) spans.reverse()
+    for (const [left, right] of spans) {
+      let start = left
+      let end = right
+      if (index % 2 !== 0) {
+        start = right
+        end = left
+      }
+      const route = pocketRoute(
+        current,
+        [start, row.y],
+        bounds,
+        raster.expanded
+      )
       if (!route)
         return {
           issue:
             "A facing span cannot be reached from this pocket without crossing a protected area. Change the rectangle or entry.",
           paths: [],
         }
-      paths.push([...route, [end, row.y]])
+      path.push(...route.slice(1), [end, row.y])
+      current = [end, row.y]
     }
   }
-  return { issue: null, paths }
+  if (path.length === 1) return { issue: null, paths: [] }
+  return { issue: null, paths: [path] }
 }
 
-/** Work-coordinate raster with cutter-radius-aware protected footprints. */
+/** Transposing the geometry reuses the same clipping and routing for Y-direction cuts. */
+const transposePoint = ([x, y]: XY): XY => [y, x]
+function transposeParams(p: FacingParams): FacingParams {
+  return {
+    ...p,
+    x: p.y,
+    y: p.x,
+    width: p.depth,
+    depth: p.width,
+    entryX: p.entryY,
+    entryY: p.entryX,
+    pattern: "horizontal",
+    borderFirst: false,
+  }
+}
+const transposeAreas = (areas: readonly FacingKeepOut[]) =>
+  areas.map((area) => ({
+    ...area,
+    min: transposePoint(area.min),
+    max: transposePoint(area.max),
+  }))
+
+/** Conservative centre-travel bounds include outside entry in BOTH cross-hatch directions. */
+export function facingCentreBounds(p: FacingParams): Rectangle {
+  const extension = p.entryMode === "pocket" ? 0 : p.diameter / 2 + 1
+  const x = p.pattern === "vertical" ? 0 : extension
+  const y =
+    p.pattern === "vertical" || p.pattern === "cross-hatch" ? extension : 0
+  return {
+    min: [p.x - x, p.y - y],
+    max: [p.x + p.width + x, p.y + p.depth + y],
+  }
+}
+
+/** Free spans on a rectangle edge, respecting the open, padded protected footprints. */
+function borderSpans(p: FacingParams, areas: readonly Rectangle[]): XY[][] {
+  const result: XY[][] = []
+  const edges: [0 | 1, number, number, number][] = [
+    [0, p.y, p.x, p.x + p.width],
+    [1, p.x + p.width, p.y, p.y + p.depth],
+    [0, p.y + p.depth, p.x + p.width, p.x],
+    [1, p.x, p.y + p.depth, p.y],
+  ]
+  for (const [axis, fixed, start, end] of edges) {
+    const other = axis === 0 ? 1 : 0
+    let spans: number[][] = [[Math.min(start, end), Math.max(start, end)]]
+    for (const area of areas) {
+      if (fixed <= area.min[other] || fixed >= area.max[other]) continue
+      spans = spans.flatMap(([a, b]) => {
+        const left = Math.max(a, area.min[axis]),
+          right = Math.min(b, area.max[axis])
+        if (left >= right) return [[a, b]]
+        return [
+          ...(a < left ? [[a, left]] : []),
+          ...(right < b ? [[right, b]] : []),
+        ]
+      })
+    }
+    if (end < start) spans = spans.reverse().map(([a, b]) => [b, a])
+    for (const span of spans)
+      result.push(
+        span.map((value): XY => (axis === 0 ? [value, fixed] : [fixed, value]))
+      )
+  }
+  return result
+}
+
+/** Border first, then the chosen raster(s), connected at one depth without another plunge. */
+export function facingPocketPaths(
+  p: FacingParams,
+  keepOuts: readonly FacingKeepOut[]
+): { issue: string | null; paths: XY[][] } {
+  if (p.entryMode !== "pocket") return { issue: null, paths: [] }
+  const parsed = FacingParamsSchema.safeParse(p)
+  if (!parsed.success)
+    return { issue: parsed.error.issues[0].message, paths: [] }
+  const entry: XY = [p.entryX!, p.entryY!]
+  const raster = facingRaster(p, keepOuts)
+  const bounds: Rectangle = {
+    min: [p.x, p.y],
+    max: [p.x + p.width, p.y + p.depth],
+  }
+  const segments: XY[][] = p.borderFirst ? borderSpans(p, raster.expanded) : []
+  const addRaster = (vertical: boolean) => {
+    const generated = horizontalPocketPaths(
+      vertical
+        ? transposeParams(p)
+        : { ...p, pattern: "horizontal", borderFirst: false },
+      vertical ? transposeAreas(keepOuts) : keepOuts
+    )
+    if (generated.issue) return generated.issue
+    for (const path of generated.paths)
+      segments.push(vertical ? path.map(transposePoint) : path)
+    return null
+  }
+  if (p.pattern !== "vertical") {
+    const issue = addRaster(false)
+    if (issue) return { issue, paths: [] }
+  }
+  if (p.pattern === "vertical" || p.pattern === "cross-hatch") {
+    const issue = addRaster(true)
+    if (issue) return { issue, paths: [] }
+  }
+  const path: XY[] = [entry]
+  for (const segment of segments) {
+    const route = pocketRoute(path.at(-1)!, segment[0], bounds, raster.expanded)
+    if (!route)
+      return {
+        issue:
+          "The border or raster cannot be reached without crossing a protected area.",
+        paths: [],
+      }
+    path.push(...route.slice(1), ...segment.slice(1))
+  }
+  return { issue: null, paths: path.length > 1 ? [path] : [] }
+}
+
+/** One outside-entry horizontal raster at a specified layer's depth. */
+function outsideLayer(
+  p: FacingParams,
+  keepOuts: readonly FacingKeepOut[],
+  cutZ: number
+): string[] {
+  const n = (v: number) => v.toFixed(4)
+  const raster = facingRaster(p, keepOuts)
+  const { left, right, safe } = raster
+  const rows = Math.ceil(p.depth / p.stepover)
+  const lines: string[] = []
+  if (raster.clipped) {
+    for (const row of raster.rows)
+      for (const [start, end] of row.spans)
+        lines.push(
+          `G0 Z${n(safe)}`,
+          `G0 X${n(start)} Y${n(row.y)}`,
+          `G1 Z${n(cutZ)} F${n(p.plunge)}`,
+          `G1 X${n(end)} F${n(p.feed)}`,
+          `G0 Z${n(safe)}`
+        )
+    return lines
+  }
+  lines.push(
+    `G0 Z${n(safe)}`,
+    `G0 X${n(left)} Y${n(p.y)}`,
+    `G1 Z${n(cutZ)} F${n(p.plunge)}`
+  )
+  for (let row = 0; row <= rows; row++) {
+    const y = p.y + (p.depth * row) / rows
+    if (row > 0) lines.push(`G1 Y${n(y)} F${n(p.feed)}`)
+    lines.push(`G1 X${n(row % 2 === 0 ? right : left)} F${n(p.feed)}`)
+  }
+  lines.push(`G0 Z${n(safe)}`)
+  return lines
+}
+
+/** Work-coordinate facing; cross-hatch repeats each layer in X and Y at the SAME Z. */
 export function facingNc(
   params: FacingParams,
   tool: number,
@@ -319,8 +501,7 @@ export function facingNc(
   const raster = facingRaster(p, keepOuts)
   const pocket = facingPocketPaths(p, keepOuts)
   if (pocket.issue) throw new Error(pocket.issue)
-  const { left, right, safe } = raster
-  const rows = Math.ceil(p.depth / p.stepover)
+  const safe = raster.safe
   const layers = Math.ceil(p.removal / p.stepdown)
   const lines = [
     "(OpenSpindle facing - review setup before Run)",
@@ -352,31 +533,16 @@ export function facingNc(
       }
       continue
     }
-    if (raster.clipped) {
-      for (const row of raster.rows) {
-        for (const [start, end] of row.spans) {
-          lines.push(
-            `G0 Z${n(safe)}`,
-            `G0 X${n(start)} Y${n(row.y)}`,
-            `G1 Z${n(cutZ)} F${n(p.plunge)}`,
-            `G1 X${n(end)} F${n(p.feed)}`,
-            `G0 Z${n(safe)}`
-          )
-        }
-      }
-      continue
-    }
-    lines.push(
-      `G0 Z${n(safe)}`,
-      `G0 X${n(left)} Y${n(p.y)}`,
-      `G1 Z${n(cutZ)} F${n(p.plunge)}`
-    )
-    for (let row = 0; row <= rows; row++) {
-      const y = p.y + (p.depth * row) / rows
-      if (row > 0) lines.push(`G1 Y${n(y)} F${n(p.feed)}`)
-      lines.push(`G1 X${n(row % 2 === 0 ? right : left)} F${n(p.feed)}`)
-    }
-    lines.push(`G0 Z${n(safe)}`)
+    if (p.pattern !== "vertical") lines.push(...outsideLayer(p, keepOuts, cutZ))
+    if (p.pattern === "vertical" || p.pattern === "cross-hatch")
+      lines.push(
+        ...outsideLayer(transposeParams(p), transposeAreas(keepOuts), cutZ).map(
+          (line) =>
+            line.replace(/\b([XY])(?=[+-]?\d)/g, (_, axis: string) =>
+              axis === "X" ? "Y" : "X"
+            )
+        )
+      )
   }
   lines.push("M5", "M30")
   return lines.join("\n")
