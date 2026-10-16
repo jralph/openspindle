@@ -21,6 +21,9 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { DeviceCard } from "@/features/prepare/sidebar-header"
 import { MachineDiagnosis } from "@/features/device/machine-diagnosis"
+import { useCalibrationRunRecord } from "@/features/device/use-calibration-run"
+import { Button } from "@/components/ui/button"
+import { openDialog, useOpenDialog } from "@/features/shell/dialogs"
 import { MachineConsole } from "./machine-console"
 import { CutFacts } from "./cut-facts"
 import { GCodeListing } from "./gcode-listing"
@@ -56,6 +59,12 @@ function JobPanel({
   check: ProgramCheck
 }) {
   const actions = useJobActions()
+  const calibrationRun = useCalibrationRunRecord()
+  const dialog = useOpenDialog()
+  const calibrationOpen =
+    !!calibrationRun &&
+    subject?.plate.id === calibrationRun.session.plate.id &&
+    dialog?.kind === "anchor-calibration"
   const runJob = useRunJob()
   const library = useWorkspace((state) => state.tools)
   const checklist = useRunChecklist(
@@ -83,20 +92,30 @@ function JobPanel({
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-3 p-3">
           <JobSummary view={view} subject={subject} />
+          {calibrationRun && (
+            <Button
+              variant="outline"
+              onClick={() => openDialog({ kind: "anchor-calibration" })}
+            >
+              Continue Anchor 1 calibration
+            </Button>
+          )}
           <MachineDiagnosis />
           <InspectionReportCard view={view} subject={subject} />
-          <RunStageList
-            view={view}
-            subject={subject}
-            tools={
-              view.kind !== "idle" && view.session
-                ? view.session.tools
-                : library
-            }
-            actions={actions}
-            checklist={checklist}
-            parts={Math.max(1, preparedProgram(check)?.parts.length ?? 1)}
-          />
+          {!calibrationOpen && (
+            <RunStageList
+              view={view}
+              subject={subject}
+              tools={
+                view.kind !== "idle" && view.session
+                  ? view.session.tools
+                  : library
+              }
+              actions={actions}
+              checklist={checklist}
+              parts={Math.max(1, preparedProgram(check)?.parts.length ?? 1)}
+            />
+          )}
         </div>
       </ScrollArea>
     </aside>

@@ -27,6 +27,8 @@ export const RunRequestSchema = z.strictObject({
   /** A fresh UUID per Run; a used ID is never replayed. */
   id: z.uuid(),
   name: DisplayNameSchema,
+  /** A reviewed run cannot migrate to another connection while preparation is in flight. */
+  expectedConnectionId: z.uuid().optional(),
   source: z
     .string()
     .min(1, "The NC program is empty.")

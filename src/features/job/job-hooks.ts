@@ -186,6 +186,7 @@ export function useRunJob() {
         {
           id: session.runId,
           name: toDisplayName(label, "Plate"),
+          expectedConnectionId: connection.id ?? undefined,
           source: compiled.program.source,
           assists: plate.setup.assists,
         },

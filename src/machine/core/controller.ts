@@ -891,6 +891,18 @@ export class MachineController {
 
   async run(input: unknown): Promise<MachineSnapshot> {
     const request = parse(RunRequestSchema, input)
+    const checkConnection = () => {
+      if (
+        request.expectedConnectionId !== undefined &&
+        (!this.session?.ready ||
+          this.connectionId(this.session) !== request.expectedConnectionId)
+      )
+        throw new MachineError(
+          "connection-lost",
+          "The device connection changed. Review the run again before starting."
+        )
+    }
+    checkConnection()
     this.refuseUsedRun(request.id)
     // Refused at once when the machine would not take it, before the program is prepared.
     this.admitNow({ key: "run" })
@@ -902,6 +914,7 @@ export class MachineController {
     }
     if (!prepared.ok) throw new MachineError("invalid", prepared.error)
     // Asked again: other requests, and the machine, went on while the program was prepared.
+    checkConnection()
     this.refuseUsedRun(request.id)
     this.admitNow({ key: "run" })
     const program = prepared.program

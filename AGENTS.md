@@ -27,7 +27,7 @@ OpenSpindle is an Electron desktop app for preparing and running jobs on a Maker
 # Product rules
 
 - OpenSpindle is an Electron app only. Do not add a browser build, browser fallbacks, or null checks for host services the preload always provides.
-- Only an explicit user action moves the machine, changes its settings or runs a program. Importing, previewing, editing, saving and PCB generation never do, and Run lives only on the Job tab. Machine commands are verified by acknowledgement and telemetry and never retried automatically; Stop stays available.
+- Only an explicit user action moves the machine, changes its settings or runs a program. Importing, previewing, editing, saving and PCB generation never do. Machining Run lives on the Job tab; the Anchor 1 calibration guide also offers explicit temporary tool-setter and bounded-contact runs using the same checked job engine, without adding project plates. Machine commands are verified by acknowledgement and telemetry and never retried automatically; Stop stays available.
 - Keep machine and vendor specifics (anchor ids and names, factory positions, bed registration, firmware codes) in the machine's firmware adapter (`src/machine/firmware/<vendor>`) or its fixture kit (`src/domain/fixtures/<machine>`), never in generic code.
 - Tools, tool catalogs and the starter library are data in `public/tool-libraries/`: `catalogs.json` lists them and `provenance.json` records their sources and corrections. Never hard-code tools, brands or vendor special cases in code.
 - Reuse the component that already does a job, with the same title, labels and behaviour, instead of making a variant. Keep panels lean: no helper links, explanatory notes or decorative icons unless asked.

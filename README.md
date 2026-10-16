@@ -58,7 +58,7 @@ Machine behaviour follows the source of [Makera's Z1 firmware](https://github.co
 - Stop ending in Alarm
 - programs sent in parts
 
-Importing, previewing and saving projects never send anything to the machine, and Run lives only on the Job tab. The Device tab explicitly saves firmware configuration and vacuum defaults; startup settings take effect after a separate restart. Work-light preferences can adjust brightness while idle and turn the light off after the configured inactivity period. Controls the machine's state does not allow are refused, and a command whose outcome is unknown is never retried. Stop does not replace the machine's emergency stop.
+Importing, previewing and saving projects never send anything to the machine. Machining Run lives on the Job tab; the Anchor 1 calibration guide offers explicit temporary tool-setter and bounded-contact runs with progress, tool-change prompts and Stop, without adding project plates. The Device tab explicitly saves firmware configuration and vacuum defaults; startup settings take effect after a separate restart. Work-light preferences can adjust brightness while idle and turn the light off after the configured inactivity period. Controls the machine's state does not allow are refused, and a command whose outcome is unknown is never retried. Stop does not replace the machine's emergency stop.
 
 If something behaves differently, **Help › Export Protocol Trace…** saves the recent exchange with the machine. Please open an issue with what you saw and the trace.
 

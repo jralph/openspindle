@@ -73,6 +73,7 @@ export function SaveAsAnchor({
   deviceId,
   calibration,
   measurementRunId,
+  onSaved,
 }: {
   /** The machine X and Y the probing found. */
   position: readonly [number, number]
@@ -82,6 +83,7 @@ export function SaveAsAnchor({
   deviceId: string | null
   calibration?: AnchorCalibration
   measurementRunId?: string
+  onSaved?: () => void
 }) {
   const id = useId()
   const machine = useMachineSnapshot()
@@ -288,6 +290,7 @@ export function SaveAsAnchor({
           ? "Reset the machine for its own moves to use it."
           : undefined,
       })
+      onSaved?.()
       return
     }
     if (!bedSetup) return

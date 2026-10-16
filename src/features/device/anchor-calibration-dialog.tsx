@@ -1,4 +1,4 @@
-import { useId, useState } from "react"
+import { useId, useMemo, useState } from "react"
 import { createAtom, useSelector } from "@tanstack/react-store"
 import { useNavigate } from "@tanstack/react-router"
 import { z } from "zod"
@@ -14,19 +14,13 @@ import {
 } from "@/components/ui/field"
 import { OptionSelect } from "@/components/option-select"
 import { ReasonButton } from "@/components/workspace/reason-button"
-import { useFixtureLibraryStore } from "@/app/fixtures/fixture-context"
+import { useFixtureLibrary } from "@/app/fixtures/fixture-context"
 import { projectPlacement } from "@/app/fixtures/plate-profile"
-import {
-  useWorkspace,
-  useWorkspaceStore,
-} from "@/app/workspace/workspace-context"
+import { useWorkspace } from "@/app/workspace/workspace-context"
 import { kitForSetup } from "@/domain/fixtures/catalog"
-import {
-  anchorCalibrationParams,
-  anchorCalibrationSetup,
-} from "@/domain/anchors/calibration"
-import { createPlate, createPlateSetup } from "@/domain/plate/plate"
-import { newProbingOperation, strategyById } from "@/domain/probing/strategies"
+import { anchorCalibrationParams } from "@/domain/anchors/calibration"
+import { createPlateSetup } from "@/domain/plate/plate"
+import { strategyById } from "@/domain/probing/strategies"
 import { machineId } from "@/machine/contract"
 import { probeProfile } from "@/domain/tools/tool"
 import { useMachineSnapshot, useReadSwitches } from "@/platform/machine"
@@ -36,6 +30,14 @@ import { useProbingForm } from "@/features/probing/probing-form"
 import { AppDialog } from "@/features/shell/app-dialog"
 import { openDialog } from "@/features/shell/dialogs"
 import { CalibrationIllustration } from "./calibration-illustration"
+import { anchorCalibrationRun } from "./anchor-calibration-run"
+import { useCalibrationRun } from "./use-calibration-run"
+import { CalibrationRunPanel } from "./calibration-run-panel"
+import { StopButton } from "@/features/job/stage-card"
+import { SaveAsAnchor } from "@/features/job/save-as-anchor"
+import { inspectionReport } from "@/features/job/inspection-report"
+import { foundPosition } from "@/domain/probing/tasks/origin/result"
+import { HeightMapFacts } from "@/components/workspace/height-map-grid"
 
 type Draft = {
   step: number
@@ -45,6 +47,7 @@ type Draft = {
   maxX: number
   maxY: number
   maxDown: number
+  savedRunId?: string
 }
 const draftAtom = createAtom<Draft>({
   step: 0,
@@ -72,10 +75,13 @@ const SearchSchema = z
 export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   const id = useId()
   const draft = useSelector(draftAtom)
-  const workspace = useWorkspaceStore()
-  const fixtures = useFixtureLibraryStore()
-  const library = useWorkspace((state) => state.tools)
-  const placement = projectPlacement(workspace.state, fixtures.state)
+  const workspace = useWorkspace((state) => state)
+  const fixtures = useFixtureLibrary((state) => state)
+  const library = workspace.tools
+  const placement = useMemo(
+    () => projectPlacement(workspace, fixtures),
+    [workspace, fixtures]
+  )
   const kit = kitForSetup(placement)
   const reference = kit.anchorCalibration
   const machine = useMachineSnapshot()
@@ -182,6 +188,8 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   if (!runReason && !binding)
     runReason =
       "Complete the live released → triggered → released signal check after positioning."
+  if (!runReason && binding?.tool !== probeNumber)
+    runReason = "Check the selected, measured probe's live signal again."
   if (
     !runReason &&
     binding &&
@@ -195,89 +203,68 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
     runReason =
       "Enter an estimated gap and valid maximum search distances. Downward search must exceed the gap."
 
-  const prepare = (measurement: boolean) => {
-    if (
-      (measurement ? reason : runReason) ||
-      (!measurement && !confirmed) ||
-      !reference ||
-      !device ||
-      !anchors ||
-      !tool ||
-      !kit.probing ||
-      !params ||
-      !target
-    )
-      return
-    const setup = anchorCalibrationSetup(
-      createPlateSetup({ stock: null, stockSource: "assigned", ...placement }),
-      kit,
-      draft.fixtureId
-    )
-    if (!setup.ok) {
-      toast.error(setup.error)
-      return
+  const candidateInput: Omit<
+    Parameters<typeof anchorCalibrationRun>[0],
+    "kit"
+  > | null =
+    !reason &&
+    tool &&
+    anchors &&
+    (draft.step === 0 || (draft.step === 2 && binding))
+      ? {
+          setup: createPlateSetup({
+            stock: null,
+            stockSource: "assigned",
+            ...placement,
+          }),
+          fixtureId: draft.fixtureId,
+          tool,
+          anchors,
+          binding,
+          gap: draft.gap,
+          maxTravel: [draft.maxX, draft.maxY, draft.maxDown],
+          stage: draft.step === 0 ? "setter" : "contacts",
+        }
+      : null
+  // Telemetry clones the same proof/anchors often. Keep the reviewed plate stable by value.
+  const candidateKey = JSON.stringify(candidateInput)
+  const candidate = useMemo(() => {
+    const input = JSON.parse(candidateKey) as typeof candidateInput
+    if (!input) return { plate: null, error: null }
+    try {
+      return { plate: anchorCalibrationRun({ ...input, kit }), error: null }
+    } catch (error) {
+      return {
+        plate: null,
+        error: error instanceof Error ? error.message : String(error),
+      }
     }
-    const plate = {
-      ...createPlate(
-        measurement ? { ...setup.value, workOriginAnchor: null } : setup.value
-      ),
-      name: measurement
-        ? "Anchor 1 — tool-setter detection"
-        : "Calibrate Anchor 1 — bounded contacts",
-    }
-    const added = newProbingOperation(plate, tool, strategy, kit.probing)
-    const source = added.operation.source
-    if (source.kind !== "probing" || source.task !== "origin") return
-    if (!measurement && (!binding || tool.diameter === null)) return
-    const operation = {
-      ...added.operation,
-      name: plate.name,
-      source: measurement
-        ? {
-            kind: "file" as const,
-            nc: reference.measurementNc!(),
-            park: false,
-            phase: "setup" as const,
-          }
-        : {
-            ...source,
-            params: { ...params, depth: Math.max(2, tool.diameter! / 2 + 0.5) },
-            anchorCalibration: {
-              anchorId: reference.anchorId,
-              deviceId: machineId(device),
-              expectedAnchors: structuredClone(anchors),
-              approach: {
-                binding: structuredClone(binding!),
-                gap: draft.gap,
-                maxTravel: [draft.maxX, draft.maxY, draft.maxDown] as [
-                  number,
-                  number,
-                  number,
-                ],
-                diameter: tool.diameter!,
-              },
-            },
-          },
-    }
-    const result = workspace.dispatch({
-      type: "batch",
-      commands: [
-        { type: "plates.add", plates: [plate], select: true },
-        {
-          type: "operation.add",
-          plateId: plate.id,
-          preferredTools: added.preferredTools,
-          operation,
-        },
-      ],
-    })
-    if (!result.ok) {
-      toast.error(result.error)
-      return
-    }
-    if (measurement) update({ step: 1 })
+  }, [candidateKey, kit])
+  const runner = useCalibrationRun(candidate.plate, tool?.id ?? null)
+  const owned = runner.record
+  const recordSource = owned?.session.plate.operations[0]?.source
+  const report = owned && runner.job ? inspectionReport(runner.view) : null
+  const feature = report?.features.find(
+    (item) => item.operationId === owned?.session.plate.operations[0]?.id
+  )
+  const position =
+    feature?.status === "complete" && feature.result
+      ? foundPosition(feature.result)
+      : null
+  const saved = !!owned && draft.savedRunId === owned.session.runId
+  const close = () => {
     onClose()
-    void navigate({ to: "/job" })
+    if (runner.busy) void navigate({ to: "/job" })
+  }
+  const start = (stage: "setter" | "contacts") => {
+    if (
+      (stage === "setter" ? reason : runReason) ||
+      candidate.error ||
+      runner.reason ||
+      (stage === "contacts" && !confirmed)
+    )
+      return
+    runner.run.mutate(stage)
   }
   let readLabel = "Read released probe / start again"
   if (check?.phase === "released") readLabel = "Read while touching probe"
@@ -287,27 +274,50 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
     <AppDialog
       title={`Auto calibrate ${reference?.name ?? "anchor"}`}
       width="wide"
-      onClose={onClose}
-      description="Fit and connect the probe, reuse or obtain its tool-setter measurement, position manually above the bracket, then verify its signal and run bounded contacts. Opening this guide moves nothing."
+      onClose={close}
+      description="Measure the fitted probe, position manually and verify its signal, then probe and save Anchor 1. Run buttons start temporary machine runs; opening this guide moves nothing."
+      toolbar={
+        runner.busy ? (
+          <StopButton
+            action={{
+              reason: null,
+              pending: runner.stop.isPending,
+              run: () => runner.stop.mutate(),
+            }}
+          />
+        ) : undefined
+      }
       footer={
         <div className="flex w-full justify-between gap-2">
           <Button
             variant="outline"
-            disabled={draft.step === 0}
+            disabled={draft.step === 0 || !!owned}
             onClick={() => changeStep(draft.step - 1)}
           >
             Back
           </Button>
           {draft.step < 2 ? (
-            <Button onClick={() => changeStep(draft.step + 1)}>Next</Button>
+            <ReasonButton
+              label={draft.step === 0 ? "Use existing measurement" : "Next"}
+              reason={
+                reason ??
+                (draft.step === 0 && !activeProbe
+                  ? "Run tool-setter detection first, or select the same already measured active probe."
+                  : null)
+              }
+              disabled={!!owned}
+              onClick={() => changeStep(draft.step + 1)}
+            >
+              {draft.step === 0 ? "Use existing measurement" : "Next"}
+            </ReasonButton>
           ) : (
             <ReasonButton
-              label="Prepare bounded calibration"
-              reason={runReason}
-              disabled={!confirmed}
-              onClick={() => prepare(false)}
+              label="Run bounded anchor probing"
+              reason={runReason ?? candidate.error ?? runner.reason}
+              disabled={!confirmed || !!owned}
+              onClick={() => start("contacts")}
             >
-              Prepare bounded calibration
+              Run bounded anchor probing
             </ReasonButton>
           )}
         </div>
@@ -320,7 +330,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
             [
               "Probe and reference",
               "Manual position, limits and signal",
-              "Review and prepare",
+              "Probe and save",
             ][draft.step]
           }
           . This draft stays while the app is open.
@@ -342,6 +352,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
                     label: `${fixture.name} · ${fixture.model.bounds.max[2] - fixture.model.bounds.min[2]} mm tall`,
                   })),
                 ]}
+                disabled={!!owned}
                 onValueChange={(fixtureId) => {
                   update({ fixtureId })
                   setConfirmedSetup(null)
@@ -359,6 +370,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
                   value: probe.id,
                   label: `${probe.name}${probe.probe?.contact === "conductive" ? " · conductive rod" : ""}`,
                 }))}
+                disabled={!!owned}
                 onValueChange={(toolId) => {
                   update({ toolId })
                   setConfirmedSetup(null)
@@ -367,6 +379,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
             </Field>
             <Button
               variant="outline"
+              disabled={!!owned}
               onClick={() =>
                 openDialog({
                   kind: "tools",
@@ -402,18 +415,19 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
             </p>
             <p>
               Insert the selected 3D probe securely and connect its signal
-              cable. If it has just been fitted or remounted, prepare
-              tool-setter detection below and Run it on Job. Follow the
-              machine's prompts. If the same fitted probe is already measured
-              and active, reuse that measurement and continue. There is no
-              automatic bracket positioning.
+              cable. If it has just been fitted or remounted, choose Run
+              tool-setter detection below. Follow the machine's prompts. If the
+              same fitted probe is already measured and active, reuse that
+              measurement and continue. There is no automatic bracket
+              positioning.
             </p>
             <ReasonButton
-              label="Prepare tool-setter detection"
-              reason={reason}
-              onClick={() => prepare(true)}
+              label="Run tool-setter detection"
+              reason={reason ?? candidate.error ?? runner.reason}
+              disabled={!!owned}
+              onClick={() => start("setter")}
             >
-              Prepare tool-setter detection
+              Run tool-setter detection
             </ReasonButton>
           </>
         )}
@@ -421,8 +435,8 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
           <>
             <CalibrationIllustration kind="anchor" />
             <p>
-              After tool detection, dismiss its completed result. Close this
-              guide and manually jog the probe over the solid top at the
+              After tool detection, choose Continue to manual positioning. Close
+              this guide and manually jog the probe over the solid top at the
               L-bracket's front-left elbow, clear of screws and holes. Aim about
               5 mm left and 5 mm forward of its inner corner, with the tip
               roughly 5 mm above the aluminium top. Reopen this guide without
@@ -447,7 +461,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
                 default: 5,
               }}
               field={probingField(form, "gap")}
-              disabled={false}
+              disabled={!!owned}
             />
             {(
               [
@@ -468,7 +482,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
                   default: 6,
                 }}
                 field={probingField(form, name)}
-                disabled={false}
+                disabled={!!owned}
               />
             ))}
             <FieldDescription>
@@ -493,7 +507,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
                 remove it for the released reading. Do not push or bend the
                 rigid rod and do not jog into the bracket to test the signal.
                 Remove loose leads and contacts from the travel area before
-                preparing the job.
+                running bounded anchor probing.
               </FieldDescription>
             )}
             <FieldDescription>
@@ -512,7 +526,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
                   ? machine.availability.readSwitches.reason
                   : null)
               }
-              disabled={readSwitches.isPending}
+              disabled={readSwitches.isPending || !!owned}
               onClick={() =>
                 readSwitches.mutate(undefined, {
                   onError: (error) => toast.error(error.message),
@@ -542,15 +556,17 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
               approximately 108 mm native top search is not used.
             </p>
             <p>
-              Prepare, review and Run this job alone without moving the probe or
-              changing its mounting. After six successful contacts, review Save
-              as Anchor 1. Saving is separate and keeps the other anchors'
-              offsets; reset and re-home after a verified write.
+              Choose Run bounded anchor probing without moving or remounting the
+              probe. This temporary run stays in the guide and adds no project
+              plate. After six verified contacts, review Save as Anchor 1 below.
+              Saving keeps the other anchors' offsets; reset and re-home after a
+              verified write.
             </p>
             <Field orientation="horizontal">
               <Checkbox
                 id={`${id}-confirm`}
                 checked={confirmed}
+                disabled={!!owned}
                 onCheckedChange={(value) =>
                   setConfirmedSetup(value === true ? setupKey : null)
                 }
@@ -565,7 +581,65 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
             </Field>
           </>
         )}
-        {(draft.step === 2 ? runReason : reason) && (
+        <CalibrationRunPanel
+          runner={runner}
+          onMeasured={() => {
+            update({ step: 1 })
+            setConfirmedSetup(null)
+          }}
+        />
+        {owned?.stage === "contacts" &&
+          !owned.pending &&
+          !owned.error &&
+          !owned.cancelled &&
+          runner.connectionMatches &&
+          runner.job?.phase === "completed" &&
+          position &&
+          recordSource?.kind === "probing" &&
+          recordSource.task === "origin" &&
+          recordSource.anchorCalibration && (
+            <div className="flex flex-col gap-3">
+              <HeightMapFacts
+                facts={[
+                  {
+                    label: "Measured Anchor 1 X",
+                    value: `${position[0].toFixed(3)} mm`,
+                  },
+                  {
+                    label: "Measured Anchor 1 Y",
+                    value: `${position[1].toFixed(3)} mm`,
+                  },
+                ]}
+              />
+              {!saved && (
+                <SaveAsAnchor
+                  position={position}
+                  plate={owned.session.plate}
+                  deviceId={owned.session.device?.id ?? null}
+                  calibration={recordSource.anchorCalibration}
+                  measurementRunId={owned.session.runId}
+                  onSaved={() => update({ savedRunId: owned.session.runId })}
+                />
+              )}
+              {saved && (
+                <>
+                  <FieldDescription>
+                    Anchor 1 was written and read back. Reset and re-home before
+                    the machine uses the saved location for its own moves.
+                  </FieldDescription>
+                  <Button
+                    disabled={runner.dismiss.isPending}
+                    onClick={() =>
+                      runner.dismiss.mutate(undefined, { onSuccess: onClose })
+                    }
+                  >
+                    Finish calibration
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        {!owned && (draft.step === 2 ? runReason : reason) && (
           <Alert>
             <AlertDescription>
               {draft.step === 2 ? runReason : reason}
