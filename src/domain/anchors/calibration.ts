@@ -62,6 +62,24 @@ export function isAnchorMeasurementNc(nc: string, kit: FixtureKit): boolean {
   return nc === kit.anchorCalibration?.measurementNc?.()
 }
 
+/** One position check for the guide and compiled calibration; no coordinate changes or motion. */
+export function anchorCalibrationStartIssue(
+  position: readonly number[],
+  target: readonly [number, number],
+  tolerance: number
+): string | null {
+  const delta = [target[0] - position[0], target[1] - position[1]]
+  if (delta.every((value) => Math.abs(value) <= tolerance)) return null
+  const adjustments = delta.flatMap((value, axis) =>
+    Math.abs(value) > tolerance
+      ? [
+          `${axis === 0 ? "X" : "Y"}${value >= 0 ? "+" : "−"} ${Math.abs(value).toFixed(3)} mm`,
+        ]
+      : []
+  )
+  return `Start is outside the ${tolerance.toFixed(1)} mm X/Y tolerance. Target machine X ${target[0].toFixed(3)}, Y ${target[1].toFixed(3)} mm; current X ${position[0].toFixed(3)}, Y ${position[1].toFixed(3)} mm. With the tip clear above the bracket, jog ${adjustments.join(" and ")} toward the target, then wait for the released-input check at the new position. Do not change work zero.`
+}
+
 /** Includes the selected canonical reference at its normal pinned position, not profile defaults. */
 export function anchorCalibrationSetup(
   setup: PlateSetup,
@@ -153,17 +171,17 @@ export function anchorCalibrationIssue(
     (item) => item.id === reference.anchorId
   )
   const checked = calibration.approach.binding
-  if (
-    !nativeAnchor ||
-    checked.tool !== source.probe ||
-    Math.abs(
-      checked.position[0] - nativeAnchor.x - expectedPlacement.offset[0]
-    ) > reference.startTolerance ||
-    Math.abs(
-      checked.position[1] - nativeAnchor.y - expectedPlacement.offset[1]
-    ) > reference.startTolerance
+  if (!nativeAnchor || checked.tool !== source.probe)
+    return "Read the calibration anchor and verify the selected probe before Run."
+  const startIssue = anchorCalibrationStartIssue(
+    checked.position,
+    [
+      nativeAnchor.x + expectedPlacement.offset[0],
+      nativeAnchor.y + expectedPlacement.offset[1],
+    ],
+    reference.startTolerance
   )
-    return "Position manually over the solid bracket top near the indicated XY, then repeat the signal check."
+  if (startIssue) return startIssue
   const references = setup.fixtures.filter((item) =>
     reference.fixtureIds.includes(item.definition.id)
   )

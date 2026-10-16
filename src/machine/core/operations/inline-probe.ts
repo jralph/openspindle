@@ -33,13 +33,15 @@ function requireStationaryProbe(context: OperationContext, status: Telemetry) {
   )
     throw new MachineError(
       "unverified",
-      "The stationary probe, millimetre mode, cleared height compensation or stopped spindle could not be verified."
+      `The stationary measured probe could not be verified (state ${status.state}, tool ${status.tool}, units ${status.units}, compensation active ${status.compensationActive}, spindle ${status.spindleRpm} RPM). No following step was sent.`
     )
   xyz(status)
 }
 
-/** A new hardware release read before EVERY search, including after each small retract. */
-async function releasedStart(context: OperationContext): Promise<Telemetry> {
+/** A fresh hardware input read at a stationary pose, before every search and after release. */
+async function probeInput(
+  context: OperationContext
+): Promise<{ status: Telemetry; triggered: boolean | null }> {
   const { session, adapter } = context
   const switches = adapter.switches
   if (!switches)
@@ -52,7 +54,7 @@ async function releasedStart(context: OperationContext): Promise<Telemetry> {
     "No fresh status before the probe-input check."
   )
   requireStationaryProbe(context, before)
-  let released: boolean | null = null
+  let triggered: boolean | null = null
   await session.request<void>(
     [switches.query],
     (event) => {
@@ -66,14 +68,14 @@ async function releasedStart(context: OperationContext): Promise<Telemetry> {
         }
       const report = switches.parse(event.line.text)
       if (report) {
-        if (released !== null || report.probe === null)
+        if (triggered !== null || report.probe === null)
           return {
             fail: new MachineError(
               "unverified",
               "Ambiguous probe-input report. No search was sent."
             ),
           }
-        released = report.probe === false
+        triggered = report.probe
         return "consumed"
       }
       if (/\[PRB:/i.test(event.line.text))
@@ -84,11 +86,11 @@ async function releasedStart(context: OperationContext): Promise<Telemetry> {
           ),
         }
       if (event.line.kind === "ack") {
-        if (released !== true)
+        if (triggered === null)
           return {
             fail: new MachineError(
               "refused",
-              "The probe input is not released. No search was sent."
+              "The probe input was not reported. No search was sent."
             ),
           }
         return { done: undefined }
@@ -97,8 +99,7 @@ async function releasedStart(context: OperationContext): Promise<Telemetry> {
     },
     {
       timeoutMs: 5000,
-      timeoutMessage:
-        "The released probe input was not verified. No search was sent.",
+      timeoutMessage: "The probe input was not verified. No search was sent.",
       signal: context.signal,
     }
   )
@@ -119,7 +120,17 @@ async function releasedStart(context: OperationContext): Promise<Telemetry> {
       "unverified",
       "The probe moved or its offset changed during the stationary input check."
     )
-  return after
+  return { status: after, triggered }
+}
+
+async function releasedStart(context: OperationContext) {
+  const input = await probeInput(context)
+  if (input.triggered !== false)
+    throw new MachineError(
+      "refused",
+      "The probe input is not released. No following move was sent."
+    )
+  return input.status
 }
 
 /** A successful report must belong to this bounded axis search and agree with stopped MCS. */
@@ -252,16 +263,28 @@ export async function runInlineProbe(
     path: "inline:verified-bounded-probing",
     transfer: { uploadedBytes: 0, verifiedBytes: 0, totalBytes: 0 },
   })
+  let currentLine = "before the first command"
   try {
     for (const [index, written] of program.text.split("\n").entries()) {
       const block = readNcBlock(written)
       if (!block.code) continue
+      currentLine = `line ${index + 1}: ${block.code}`
       if (context.signal.aborted) throw context.signal.reason
       const probing = block.words.some(
-        (word) => word.letter === "G" && word.value === 38.2
+        (word) => word.letter === "G" && [38.2, 38.4].includes(word.value)
       )
-      const before = probing ? await releasedStart(context) : null
-      const contact = await step(context, block.code, probing)
+      const releasing = block.words.some(
+        (word) => word.letter === "G" && word.value === 38.4
+      )
+      // G38.4 is the firmware's bounded probe-away operation. If the input
+      // already opened at rest, no release motion is needed or sent.
+      const releaseInput = releasing ? await probeInput(context) : null
+      let before: Telemetry | null = releaseInput?.status ?? null
+      if (probing && !releasing) before = await releasedStart(context)
+      const skipRelease = releasing && releaseInput?.triggered === false
+      const contact = skipRelease
+        ? null
+        : await step(context, block.code, probing)
       // G38 is synchronous, and this also drains every queued ordinary move before advancing.
       await step(context, "M400", false)
       if (contact) {
@@ -271,14 +294,19 @@ export async function runInlineProbe(
             "No verified start for this contact."
           )
         await verifyContact(context, block, before, contact)
-        contacts.contacts.push(contact)
-        contacts.line ??= index + 1
-        if (contacts.contacts.length > 6)
-          throw new MachineError(
-            "rejected",
-            "Too many contacts; bounded probing stopped."
-          )
+        if (!releasing) {
+          contacts.contacts.push(contact)
+          contacts.line ??= index + 1
+          if (contacts.contacts.length > 6)
+            throw new MachineError(
+              "rejected",
+              "Too many contacts; bounded probing stopped."
+            )
+        }
       }
+      // A probe-away PRB is a release event, never one of the six measuring
+      // contacts. Confirm Open before permitting any ordinary clearance move.
+      if (releasing) await releasedStart(context)
       hooks.update({
         measurements: contacts.contacts.length
           ? [{ ...contacts, contacts: [...contacts.contacts] }]
@@ -319,6 +347,11 @@ export async function runInlineProbe(
     })
   } catch (error) {
     if (!context.signal.aborted && !session.closed) session.send(adapter.halt)
+    if (error instanceof MachineError)
+      throw new MachineError(
+        error.code,
+        `${error.message} At ${currentLine}; ${contacts.contacts.length} measuring contacts verified. No step was retried.`
+      )
     throw error
   }
 }

@@ -6,12 +6,39 @@ import type {
 } from "../contract/index.ts"
 import { MachineError } from "./errors.ts"
 
-/** An actual switch transition, bound to an unchanged stationary tool pose. */
+/** Completed electrical checks survive jogging; execution still requires a checked stationary pose. */
 export class ProbeSignalCheck {
   value: ProbeCheck | null = null
 
   invalidate() {
     this.value = null
+  }
+
+  moved() {
+    if (this.value?.phase !== "verified") this.invalidate()
+  }
+
+  observe(telemetry: Telemetry | null, connectionId: string, now: number) {
+    const check = this.value
+    if (!check) return
+    if (
+      check.connectionId !== connectionId ||
+      now > check.expiresAt ||
+      !isFresh(telemetry, now) ||
+      !["Idle", "Run"].includes(telemetry.state) ||
+      telemetry.job !== null ||
+      telemetry.units !== "mm" ||
+      !isHeightCompensationOff(telemetry) ||
+      telemetry.spindleRpm !== 0 ||
+      telemetry.spindleOn === true ||
+      telemetry.tool !== check.binding.tool ||
+      telemetry.toolOffset !== check.binding.toolOffset ||
+      !telemetry.machine
+    ) {
+      this.invalidate()
+      return
+    }
+    if (!this.validPose(telemetry, connectionId, now)) this.moved()
   }
 
   validPose(telemetry: Telemetry | null, connectionId: string, now: number) {
@@ -83,16 +110,21 @@ export class ProbeSignalCheck {
     now: number,
     tool: number
   ) {
-    if (!this.validPose(telemetry, connectionId, now)) this.invalidate()
-    if (
-      !telemetry.machine ||
-      telemetry.toolOffset === null ||
-      triggered === null ||
-      !this.stationaryRead(before, telemetry, now, tool)
-    ) {
+    this.observe(telemetry, connectionId, now)
+    if (triggered === null) {
       this.invalidate()
       return
     }
+    if (
+      !telemetry.machine ||
+      telemetry.toolOffset === null ||
+      !this.stationaryRead(before, telemetry, now, tool)
+    ) {
+      this.moved()
+      return
+    }
+    const retained = this.value?.phase === "verified" ? this.value : null
+    if (!this.validPose(telemetry, connectionId, now)) this.value = null
     if (!this.value) {
       if (triggered) return
       const binding: ProbeCheckBinding = {
@@ -107,11 +139,11 @@ export class ProbeSignalCheck {
       }
       if (!this.matches(binding, telemetry, now)) return
       this.value = {
-        phase: "released",
+        phase: retained ? "verified" : "released",
         binding,
         connectionId,
-        startedAt: now,
-        expiresAt: now + 120000,
+        startedAt: retained?.startedAt ?? now,
+        expiresAt: retained?.expiresAt ?? now + 120000,
       }
       return
     }
@@ -137,7 +169,7 @@ export class ProbeSignalCheck {
     if (!valid)
       throw new MachineError(
         "refused",
-        "Verify the probe input released → triggered → released at this unchanged tool position before Run. The check expires after 120 seconds and can be used once."
+        "Touch and release the measured probe once, then wait for a released-input check at the current stationary position before Run. The check expires after 120 seconds and can be used once."
       )
   }
 }

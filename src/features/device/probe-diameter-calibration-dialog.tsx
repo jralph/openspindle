@@ -47,7 +47,7 @@ import { ParameterField, probingField } from "@/features/probing/probing-fields"
 import { useProbingForm } from "@/features/probing/probing-form"
 import { AppDialog } from "@/features/shell/app-dialog"
 import { CalibrationIllustration } from "./calibration-illustration"
-import { ProbeInputCheck } from "./probe-input-check"
+import { checkedProbeBinding, ProbeInputCheck } from "./probe-input-check"
 
 type ReadingSource = {
   kind: "manual" | "physical" | "simulator"
@@ -210,13 +210,7 @@ export function ProbeDiameterCalibrationDialog({
   const confirmed = confirmedSetup === setupKey
   const setConfirmed = (value: boolean) =>
     setConfirmedSetup(value ? setupKey : null)
-  const check = machine.probeCheck
-  const binding =
-    check?.phase === "verified" &&
-    check.connectionId === machine.connection.id &&
-    check.expiresAt > Date.now()
-      ? check.binding
-      : null
+  const binding = checkedProbeBinding(machine)
   const profile = tool && probeProfile(tool)
   const probeNumber = profile && kit.probing?.slot(profile)
   const device = machine.connection.device

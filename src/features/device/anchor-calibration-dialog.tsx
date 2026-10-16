@@ -17,10 +17,13 @@ import { useFixtureLibrary } from "@/app/fixtures/fixture-context"
 import { projectPlacement } from "@/app/fixtures/plate-profile"
 import { useWorkspace } from "@/app/workspace/workspace-context"
 import { kitForSetup } from "@/domain/fixtures/catalog"
-import { anchorCalibrationParams } from "@/domain/anchors/calibration"
+import {
+  anchorCalibrationParams,
+  anchorCalibrationStartIssue,
+} from "@/domain/anchors/calibration"
 import { createPlateSetup } from "@/domain/plate/plate"
 import { strategyById } from "@/domain/probing/strategies"
-import { machineId } from "@/machine/contract"
+import { isFresh, machineId } from "@/machine/contract"
 import { probeProfile } from "@/domain/tools/tool"
 import { useMachineSnapshot } from "@/platform/machine"
 import { strategyProbes } from "@/features/probing/probe-tools"
@@ -32,7 +35,7 @@ import { CalibrationIllustration } from "./calibration-illustration"
 import { anchorCalibrationRun } from "./anchor-calibration-run"
 import { useCalibrationRun } from "./use-calibration-run"
 import { CalibrationRunPanel } from "./calibration-run-panel"
-import { ProbeInputCheck } from "./probe-input-check"
+import { checkedProbeBinding, ProbeInputCheck } from "./probe-input-check"
 import { StopButton } from "@/features/job/stage-card"
 import { SaveAsAnchor } from "@/features/job/save-as-anchor"
 import { inspectionReport } from "@/features/job/inspection-report"
@@ -132,17 +135,22 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   const references = kit.fixtures.filter((entry) =>
     reference?.fixtureIds.includes(entry.fixture.id)
   )
-  const check = machine.probeCheck
-  const binding =
-    check?.phase === "verified" &&
-    check.connectionId === machine.connection.id &&
-    check.expiresAt > Date.now()
-      ? check.binding
-      : null
+  const binding = checkedProbeBinding(machine)
   const signalVerified =
     !!binding &&
     draft.signalBindingId === binding.id &&
     draft.signalToolId === tool?.id
+  const livePosition = isFresh(machine.telemetry, Date.now())
+    ? machine.telemetry.machine
+    : null
+  const liveStartIssue =
+    target && reference && livePosition
+      ? anchorCalibrationStartIssue(
+          [livePosition.x, livePosition.y],
+          target,
+          reference.startTolerance
+        )
+      : null
   const setupKey = JSON.stringify({
     deviceId: placement.deviceId,
     connectionId: machine.connection.id,
@@ -197,15 +205,12 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
       "Position the probe, touch it once and remove contact; wait for Probe signal verified."
   if (!runReason && binding?.tool !== probeNumber)
     runReason = "Check the selected, measured probe's live signal again."
-  if (
-    !runReason &&
-    binding &&
-    target &&
-    (Math.abs(binding.position[0] - target[0]) > reference!.startTolerance ||
-      Math.abs(binding.position[1] - target[1]) > reference!.startTolerance)
-  )
-    runReason =
-      "Position manually over the solid bracket top near the indicated XY, then repeat the signal check."
+  if (!runReason && binding && target && reference)
+    runReason = anchorCalibrationStartIssue(
+      binding.position,
+      target,
+      reference.startTolerance
+    )
   if (!runReason && !valid)
     runReason =
       "Enter an estimated gap and valid maximum search distances. Downward search must exceed the gap."
@@ -276,9 +281,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   let nextReason = reason
   if (!nextReason && draft.step === 0 && !activeProbe)
     nextReason = "Run tool-setter detection for the fitted probe first."
-  if (!nextReason && draft.step === 1 && !signalVerified)
-    nextReason =
-      "Position the probe, touch it once and remove contact. Next unlocks when its signal is verified."
+  if (draft.step === 1) nextReason = liveStartIssue ?? runReason
   return (
     <AppDialog
       title={`Auto calibrate ${reference?.name ?? "anchor"}`}
@@ -339,6 +342,44 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
           }
           . This draft stays while the app is open.
         </FieldDescription>
+        {draft.step > 0 && target && (
+          <HeightMapFacts
+            facts={[
+              {
+                label: "Target machine X",
+                value: `${target[0].toFixed(3)} mm`,
+              },
+              {
+                label: "Target machine Y",
+                value: `${target[1].toFixed(3)} mm`,
+              },
+              {
+                label: "Current machine X",
+                value: livePosition
+                  ? `${livePosition.x.toFixed(3)} mm`
+                  : "Waiting for status",
+              },
+              {
+                label: "Current machine Y",
+                value: livePosition
+                  ? `${livePosition.y.toFixed(3)} mm`
+                  : "Waiting for status",
+              },
+              {
+                label: "X to target",
+                value: livePosition
+                  ? `${(target[0] - livePosition.x).toFixed(3)} mm`
+                  : "—",
+              },
+              {
+                label: "Y to target",
+                value: livePosition
+                  ? `${(target[1] - livePosition.y).toFixed(3)} mm`
+                  : "—",
+              },
+            ]}
+          />
+        )}
         {draft.step === 0 && (
           <>
             <CalibrationIllustration kind="anchor" />
@@ -453,6 +494,11 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
                 the front left of the bed.
               </FieldDescription>
             )}
+            {liveStartIssue && (
+              <Alert>
+                <AlertDescription>{liveStartIssue}</AlertDescription>
+              </Alert>
+            )}
             <ParameterField
               id={`${id}-gap`}
               parameter={{
@@ -522,7 +568,9 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
               the pocket and probes the two inner walls with limits of{" "}
               {draft.maxX.toFixed(2)} mm left and {draft.maxY.toFixed(2)} mm
               forward, releasing X before Y. Each successful contact must be
-              received and verified before the next step.
+              received and verified before the next step. A bounded probe-away
+              move checks that contact opens before moving 2 mm clear of each
+              wall. The slower second side search is limited to 2.4 mm.
             </p>
             <p>
               These are maximum travel distances, not guaranteed compression
@@ -614,10 +662,10 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
               )}
             </div>
           )}
-        {!owned && (draft.step === 2 ? runReason : reason) && (
+        {!owned && (draft.step === 0 ? reason : runReason) && (
           <Alert>
             <AlertDescription>
-              {draft.step === 2 ? runReason : reason}
+              {draft.step === 0 ? reason : runReason}
             </AlertDescription>
           </Alert>
         )}

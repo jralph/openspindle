@@ -501,7 +501,7 @@ export class MachineController {
         "refused",
         "Stock Z1 firmware supports finite Step jogging. Direct release-to-stop steering requires a verified firmware cancellation mechanism."
       )
-    this.probeSignal.invalidate()
+    this.probeSignal.moved()
     const command = {
       type: "jog",
       axis: "X",
@@ -753,7 +753,8 @@ export class MachineController {
         "refused",
         "Bounded probing cannot pause or resume between contacts. Stop remains available."
       )
-    this.probeSignal.invalidate()
+    if (command.type === "jog") this.probeSignal.moved()
+    else this.probeSignal.invalidate()
     this.admitNow({ key: command.type, command })
     if (
       (command.type === "lightBrightness" ||
@@ -1138,7 +1139,8 @@ export class MachineController {
           }
         )
         checkConnection()
-        if (this.probeRead?.changed) this.probeSignal.invalidate()
+        if (report.probe === null) this.probeSignal.invalidate()
+        else if (this.probeRead?.changed) this.probeSignal.moved()
         else if (this.adapter.probeCheckTool !== undefined)
           this.probeSignal.read(
             report.probe,
@@ -1319,14 +1321,11 @@ export class MachineController {
       )
     )
       this.probeRead.changed = true
-    if (
-      !this.probeSignal.validPose(
-        telemetry,
-        this.connectionId(session),
-        this.ports.clock.now()
-      )
+    this.probeSignal.observe(
+      telemetry,
+      this.connectionId(session),
+      this.ports.clock.now()
     )
-      this.probeSignal.invalidate()
     if (this.tracker) this.applyTracker(this.tracker.status(telemetry))
     this.maybeReadAnchorsOnConnect()
     this.scheduleDeferred()

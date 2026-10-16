@@ -11,6 +11,26 @@ import type { MachineSnapshot, ProbeCheckBinding } from "@/machine/contract"
 import { useMachineHost, useMachineSnapshot } from "@/platform/machine"
 import { log } from "@/app/errors/log"
 
+// UI scoping only; the host owns expiry, tool identity and the one-use input proof.
+let verifiedToolKey: string | null = null
+
+/** Only a released input checked at the current stationary pose can enable Run. */
+export function checkedProbeBinding(machine: MachineSnapshot) {
+  const check = machine.probeCheck
+  if (
+    check?.phase !== "verified" ||
+    check.connectionId !== machine.connection.id ||
+    check.expiresAt <= Date.now()
+  )
+    return null
+  try {
+    checkPose(machine, check.connectionId, check.binding)
+    return check.binding
+  } catch {
+    return null
+  }
+}
+
 function signalWaitingReason(
   machine: MachineSnapshot,
   toolNumber: number | null,
@@ -213,6 +233,15 @@ function SignalWatch({
           ],
         }
         let proofId: string | null = null
+        const previous = initial.probeCheck
+        const retainSignal =
+          verifiedToolKey === JSON.stringify(tool) &&
+          previous?.phase === "verified" &&
+          previous.connectionId === connectionId &&
+          previous.expiresAt > Date.now() &&
+          previous.binding.tool === toolNumber &&
+          previous.binding.toolOffset === telemetry.toolOffset
+        let firstRead = true
         while (!signal.aborted) {
           if (Date.now() < quietUntil.current) {
             setMessage(
@@ -241,8 +270,9 @@ function SignalWatch({
           if (Date.now() < quietUntil.current) continue
           const report = await host.readSwitches({
             expectedConnectionId: connectionId,
-            startProbeCheck: proofId === null,
+            startProbeCheck: firstRead && !retainSignal,
           })
+          firstRead = false
           requireActive(signal)
           if (report.probe === null)
             throw new Error(
@@ -288,6 +318,7 @@ function SignalWatch({
       }
     },
     onSuccess: (id) => {
+      verifiedToolKey = JSON.stringify(tool)
       setVerifiedId(id)
       setMessage("Probe signal verified")
       callback.current(id)
@@ -344,7 +375,9 @@ function SignalWatch({
       <FieldDescription>
         This sends status queries only, with no axis motion. A tool-setter
         measurement checks a separate input. Remove loose testing contacts
-        before running the job.
+        before running the job. A completed touch test stays valid through
+        jogging for the same measured probe within its two-minute window. The
+        guide checks the released input again when you stop positioning.
       </FieldDescription>
     </StageCard>
   )

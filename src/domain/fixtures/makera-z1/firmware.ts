@@ -319,6 +319,16 @@ class Z1Preview implements GCodeFirmware {
       words.get("Z") ?? 0,
     ]
     if (delta.every((distance) => distance === 0)) return { moves: [] }
+    if (block.gCodes.some((code) => code === 38.4 || code === 38.5)) {
+      // Release stops on the input opening, not on a solid ahead. Show its
+      // maximum travel conservatively; physical release is verified by the host.
+      moves.to(moves.at.map((value, axis) => value + delta[axis]) as Point3, {
+        rapid: false,
+        feed: words.get("F") ?? Z1.grid.slow,
+        probing: true,
+      })
+      return { moves: moves.list }
+    }
     if (this.probeRadius > 0 && !delta[2] && !!delta[0] !== !!delta[1]) {
       const axis = delta[0] ? 0 : 1
       this.sideSearch(moves, axis, delta[axis], null, this.probeRadius, {
