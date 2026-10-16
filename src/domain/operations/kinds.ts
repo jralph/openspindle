@@ -182,6 +182,7 @@ const probingKind: OperationKind<"probing"> = {
       const generate = kit.anchorCalibration?.boundedNc
       if (
         !generate ||
+        !approach.maxTravel ||
         plate.operations.length !== 1 ||
         operation.stopBefore ||
         probe.value.tool.diameter !== approach.diameter ||
@@ -196,7 +197,12 @@ const probingKind: OperationKind<"probing"> = {
           )
         )
       return ok({
-        nc: generate(approach.binding, approach.gap, approach.diameter),
+        nc: generate(
+          approach.binding,
+          approach.gap,
+          approach.diameter,
+          approach.maxTravel
+        ),
         standalone: true,
         policy: { probing: "origin", anchoredProbing: false },
         reviewLines: [],

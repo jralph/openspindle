@@ -6,8 +6,13 @@ import type {
 } from "../../contract/index.ts"
 
 const planSchema = z.strictObject({
-  gap: z.number().finite().min(0.1).max(0.5),
+  gap: z.number().finite().min(0.1).max(5),
   diameter: z.number().finite().min(0.5).max(3.2),
+  maxTravel: z.tuple([
+    z.number().finite().min(0.4).max(10),
+    z.number().finite().min(0.4).max(10),
+    z.number().finite().min(0.4).max(10),
+  ]),
 })
 const n = (value: number) => Number(value.toFixed(4))
 const normalized = (line: string) => {
@@ -31,16 +36,19 @@ export function boundedAnchorRequirement(
   if (binding.tool !== 9999)
     throw new Error("Bounded Anchor 1 requires the selected 3D probe.")
   const plan = planSchema.parse(JSON.parse(plans[0][1]))
+  if (plan.maxTravel[2] <= plan.gap)
+    throw new Error(
+      "Maximum downward search must exceed the estimated top gap. Recreate the calibration with the guide."
+    )
   const radius = n(plan.diameter / 2)
   const depth = n(Math.max(2, radius + 0.5))
-  const reach = n(5 - radius + 0.1)
   const expected = [
     "M5",
     "G21G90G17G94G54",
     "M370",
     "M494.1",
     "M400",
-    `G38.2Z-${n(plan.gap + 0.1)}F30`,
+    `G38.2Z-${n(plan.maxTravel[2])}F30`,
     "G10L20P0Z0",
     "G91G0Z0.2",
     "M400",
@@ -52,7 +60,7 @@ export function boundedAnchorRequirement(
     "M400",
     `G90G1Z-${depth}F30`,
     "M400",
-    `G38.2X-${reach}F30`,
+    `G38.2X-${n(plan.maxTravel[0])}F30`,
     "G91G0X0.2",
     "M400",
     "G38.2X-0.4F15",
@@ -60,7 +68,7 @@ export function boundedAnchorRequirement(
     "G91G0X0.2",
     "G90G0X5",
     "M400",
-    `G38.2Y-${reach}F30`,
+    `G38.2Y-${n(plan.maxTravel[1])}F30`,
     "G91G0Y0.2",
     "M400",
     "G38.2Y-0.4F15",

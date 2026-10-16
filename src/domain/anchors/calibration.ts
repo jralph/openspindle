@@ -22,7 +22,14 @@ export const AnchorCalibrationSchema = z.strictObject({
   approach: z
     .strictObject({
       binding: ProbeCheckBindingSchema,
-      gap: z.number().finite().min(0.1).max(0.5),
+      gap: z.number().finite().min(0.1).max(5),
+      maxTravel: z
+        .tuple([
+          z.number().finite().min(0.4).max(10),
+          z.number().finite().min(0.4).max(10),
+          z.number().finite().min(0.4).max(10),
+        ])
+        .optional(),
       diameter: z.number().finite().min(0.5).max(3.2),
     })
     .optional(),
@@ -50,29 +57,9 @@ export function anchorCalibrationParams(kit: FixtureKit): OriginParams | null {
   }
 }
 
-/** Only the kit's exact, anchored setup program owns its modes and clearance travel. */
-export function isAnchorPositioningNc(
-  nc: string,
-  setup: PlateSetup,
-  kit: FixtureKit
-): boolean {
-  const generate = kit.anchorCalibration?.positioningNc
-  const placement = anchorCalibrationParams(kit)?.placement
-  const stored = setup.anchors
-  if (
-    !generate ||
-    placement?.kind !== "anchor" ||
-    stored?.source !== "firmware-config" ||
-    stored.deviceId !== setup.deviceId
-  )
-    return false
-  const anchor = stored.anchors.find((item) => item.id === placement.anchorId)
-  if (!anchor) return false
-  const [dx, dy] = placement.offset
-  return (
-    nc ===
-    generate([anchor.machinePosition[0] + dx, anchor.machinePosition[1] + dy])
-  )
+/** The exact tool-setter setup job owns its modes and clearance, without a work-origin preamble. */
+export function isAnchorMeasurementNc(nc: string, kit: FixtureKit): boolean {
+  return nc === kit.anchorCalibration?.measurementNc?.()
 }
 
 /** Includes the selected canonical reference at its normal pinned position, not profile defaults. */
@@ -119,8 +106,10 @@ export function anchorCalibrationIssue(
 ): string | null {
   const calibration = source.anchorCalibration
   if (!calibration) return null
-  if (!calibration.approach)
-    return "Recreate this calibration with the guide: it needs a live contact-signal check and bounded approach."
+  if (!calibration.approach?.maxTravel)
+    return "Recreate this calibration with the guide: it needs the manually positioned start, live signal check and separate X/Y/Z search limits."
+  if (calibration.approach.maxTravel[2] <= calibration.approach.gap)
+    return "Maximum downward search must exceed the estimated gap above the bracket."
   const reference = kit.anchorCalibration
   const expected = anchorCalibrationParams(kit)
   const expectedPlacement = expected?.placement
@@ -169,12 +158,12 @@ export function anchorCalibrationIssue(
     checked.tool !== source.probe ||
     Math.abs(
       checked.position[0] - nativeAnchor.x - expectedPlacement.offset[0]
-    ) > 0.01 ||
+    ) > reference.startTolerance ||
     Math.abs(
       checked.position[1] - nativeAnchor.y - expectedPlacement.offset[1]
-    ) > 0.01
+    ) > reference.startTolerance
   )
-    return "The checked probe position is not over the anchored bracket start. Reposition and check the signal again."
+    return "Position manually over the solid bracket top near the indicated XY, then repeat the signal check."
   const references = setup.fixtures.filter((item) =>
     reference.fixtureIds.includes(item.definition.id)
   )

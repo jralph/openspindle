@@ -91,12 +91,14 @@ export abstract class FixtureKit {
     readonly reference: string
     readonly fixtureIds: readonly string[]
     readonly params: Pick<OriginParams, "corner" | "distance" | "depth">
+    readonly measurementNc?: () => string
+    readonly startTolerance: number
     readonly boundedNc?: (
       binding: ProbeCheckBinding,
       gap: number,
-      diameter: number
+      diameter: number,
+      maxTravel: readonly [number, number, number]
     ) => string
-    readonly positioningNc?: (xy: readonly [number, number]) => string
   } | null = null
   /** Modeled recesses only: the operator must verify clearance on the installed bed. */
   readonly facingEntryPockets: readonly {

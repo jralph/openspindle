@@ -5,8 +5,8 @@
  * registry of every kind (`OPERATION_KINDS`) holds their methods.
  */
 
+import { isAnchorMeasurementNc } from "../anchors/calibration"
 import { PLAIN_NC, withoutClosingPark } from "../compile/nc-unit"
-import { isAnchorPositioningNc } from "../anchors/calibration"
 import { error, operationSubject } from "../diagnostics"
 import type { FixtureKit } from "../fixtures/fixture-kit"
 import type { Plate } from "../plate/plate"
@@ -46,8 +46,7 @@ export const fileKind: OperationKind<"file"> = {
     return ok({
       ...plain(nc),
       standalone:
-        plate.operations.length === 1 &&
-        isAnchorPositioningNc(nc, plate.setup, kit),
+        plate.operations.length === 1 && isAnchorMeasurementNc(nc, kit),
     })
   },
 }

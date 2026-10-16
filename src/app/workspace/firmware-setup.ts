@@ -48,7 +48,7 @@ export function firmwareSetup(plate: Plate, kit: FixtureKit): FirmwareSetup {
     )
     return {
       ...setup,
-      // Machine Z depends on the measured stylus length. The bracket model + verified gap
+      // Machine Z depends on the measured stylus length. The bracket model + estimated gap
       // place its tip for this nominal preview; never invent a setter-derived absolute Z.
       start: [
         bed[0] - workOrigin[0],

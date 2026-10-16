@@ -28,6 +28,7 @@ import {
 import { createPlate, createPlateSetup } from "@/domain/plate/plate"
 import { newProbingOperation, strategyById } from "@/domain/probing/strategies"
 import { machineId } from "@/machine/contract"
+import { probeProfile } from "@/domain/tools/tool"
 import { useMachineSnapshot, useReadSwitches } from "@/platform/machine"
 import { strategyProbes } from "@/features/probing/probe-tools"
 import { ParameterField, probingField } from "@/features/probing/probing-fields"
@@ -35,16 +36,37 @@ import { useProbingForm } from "@/features/probing/probing-form"
 import { AppDialog } from "@/features/shell/app-dialog"
 import { CalibrationIllustration } from "./calibration-illustration"
 
-type Draft = { step: number; toolId: string; fixtureId: string; gap: number }
+type Draft = {
+  step: number
+  toolId: string
+  fixtureId: string
+  gap: number
+  maxX: number
+  maxY: number
+  maxDown: number
+}
 const draftAtom = createAtom<Draft>({
   step: 0,
   toolId: "",
   fixtureId: "",
-  gap: 0.2,
+  gap: 5,
+  maxX: 6,
+  maxY: 6,
+  maxDown: 6,
 })
 const update = (patch: Partial<Draft>) =>
   draftAtom.set((draft) => ({ ...draft, ...patch }))
-const GapSchema = z.strictObject({ gap: z.number().finite().min(0.1).max(0.5) })
+const SearchSchema = z
+  .strictObject({
+    gap: z.number().finite().min(0.1).max(5),
+    maxX: z.number().finite().min(0.4).max(10),
+    maxY: z.number().finite().min(0.4).max(10),
+    maxDown: z.number().finite().min(0.4).max(10),
+  })
+  .refine((value) => value.maxDown > value.gap, {
+    path: ["maxDown"],
+    message: "Maximum downward search must exceed the estimated top gap.",
+  })
 
 export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   const id = useId()
@@ -61,9 +83,14 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   const [confirmedSetup, setConfirmedSetup] = useState<string | null>(null)
   const [valid, setValid] = useState(true)
   const form = useProbingForm(
-    { gap: draft.gap },
-    GapSchema,
-    ({ gap }) => update({ gap }),
+    {
+      gap: draft.gap,
+      maxX: draft.maxX,
+      maxY: draft.maxY,
+      maxDown: draft.maxDown,
+    },
+    SearchSchema,
+    (value) => update(value),
     setValid
   )
   const strategy = strategyById("inside-corner")!
@@ -76,6 +103,13 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
     probes.find((entry) => entry.tool.id === draft.toolId)?.tool ??
     (!draft.toolId ? probes.at(0)?.tool : undefined)
   const device = machine.connection.device
+  const profile = tool && probeProfile(tool)
+  const probeNumber = profile && kit.probing?.slot(profile)
+  const activeProbe =
+    probeNumber !== null &&
+    probeNumber !== undefined &&
+    machine.telemetry?.tool === probeNumber &&
+    machine.telemetry.toolOffset !== null
   const anchors = machine.anchors.value
   const anchor = anchors?.anchors.find(
     (item) => item.id === reference?.anchorId
@@ -100,6 +134,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
     anchors,
     fixtureId: draft.fixtureId,
     gap: draft.gap,
+    maxTravel: [draft.maxX, draft.maxY, draft.maxDown],
     binding,
   })
   const confirmed = confirmedSetup === setupKey
@@ -108,7 +143,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
     setConfirmedSetup(null)
   }
   let reason: string | null = null
-  if (!reference?.boundedNc || !reference.positioningNc)
+  if (!reference?.boundedNc || !reference.measurementNc)
     reason = "This machine has no supported bounded anchor calibration."
   if (
     !reason &&
@@ -147,18 +182,19 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
     !runReason &&
     binding &&
     target &&
-    (Math.abs(binding.position[0] - target[0]) > 0.01 ||
-      Math.abs(binding.position[1] - target[1]) > 0.01)
+    (Math.abs(binding.position[0] - target[0]) > reference!.startTolerance ||
+      Math.abs(binding.position[1] - target[1]) > reference!.startTolerance)
   )
     runReason =
-      "The checked XY is not above the anchored start. Run positioning, approach in Z only, then repeat the signal check."
+      "Position manually over the solid bracket top near the indicated XY, then repeat the signal check."
   if (!runReason && !valid)
-    runReason = "Enter a measured top gap from 0.1 to 0.5 mm."
+    runReason =
+      "Enter an estimated gap and valid maximum search distances. Downward search must exceed the gap."
 
-  const prepare = (positioning: boolean) => {
+  const prepare = (measurement: boolean) => {
     if (
-      (positioning ? reason : runReason) ||
-      (!positioning && !confirmed) ||
+      (measurement ? reason : runReason) ||
+      (!measurement && !confirmed) ||
       !reference ||
       !device ||
       !anchors ||
@@ -179,23 +215,23 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
     }
     const plate = {
       ...createPlate(
-        positioning ? { ...setup.value, workOriginAnchor: null } : setup.value
+        measurement ? { ...setup.value, workOriginAnchor: null } : setup.value
       ),
-      name: positioning
-        ? "Anchor 1 — probe measurement and positioning"
+      name: measurement
+        ? "Anchor 1 — tool-setter detection"
         : "Calibrate Anchor 1 — bounded contacts",
     }
     const added = newProbingOperation(plate, tool, strategy, kit.probing)
     const source = added.operation.source
     if (source.kind !== "probing" || source.task !== "origin") return
-    if (!positioning && (!binding || tool.diameter === null)) return
+    if (!measurement && (!binding || tool.diameter === null)) return
     const operation = {
       ...added.operation,
       name: plate.name,
-      source: positioning
+      source: measurement
         ? {
             kind: "file" as const,
-            nc: reference.positioningNc!(target),
+            nc: reference.measurementNc!(),
             park: false,
             phase: "setup" as const,
           }
@@ -209,6 +245,11 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
               approach: {
                 binding: structuredClone(binding!),
                 gap: draft.gap,
+                maxTravel: [draft.maxX, draft.maxY, draft.maxDown] as [
+                  number,
+                  number,
+                  number,
+                ],
                 diameter: tool.diameter!,
               },
             },
@@ -230,7 +271,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
       toast.error(result.error)
       return
     }
-    if (positioning) update({ step: 1 })
+    if (measurement) update({ step: 1 })
     onClose()
     void navigate({ to: "/job" })
   }
@@ -243,7 +284,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
       title={`Auto calibrate ${reference?.name ?? "anchor"}`}
       width="wide"
       onClose={onClose}
-      description="Measure and position the probe, approach the top manually, verify its live contact signal, then run bounded contacts and review the anchor. Opening this guide moves nothing."
+      description="Fit and connect the probe, reuse or obtain its tool-setter measurement, position manually above the bracket, then verify its signal and run bounded contacts. Opening this guide moves nothing."
       footer={
         <div className="flex w-full justify-between gap-2">
           <Button
@@ -273,8 +314,8 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
           Step {draft.step + 1} of 3 ·{" "}
           {
             [
-              "Reference and positioning",
-              "Near-surface approach and signal",
+              "Probe and reference",
+              "Manual position, limits and signal",
               "Review and prepare",
             ][draft.step]
           }
@@ -322,28 +363,24 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
             </Field>
             <p>
               Secure and clean the bracket in its normal pinned position. Fit
-              the selected, undamaged probe and connect its signal cable. Use
-              the actual tip's library entry and diameter; do not reuse the
-              broken probe's dimensions for a conductive rod.
+              the selected, undamaged probe. Use the actual tip's library entry
+              and diameter; do not reuse the broken probe's dimensions for a
+              conductive rod.
             </p>
             <p>
-              The separate positioning job measures the probe on the tool setter
-              and travels at clearance to the solid bracket top, X−5 and Y−5 mm
-              from Anchor 1. It does not descend onto the bracket. Review it and
-              Run on Job, then reopen this guide.
+              Insert the selected 3D probe securely and connect its signal
+              cable. If it has just been fitted or remounted, prepare
+              tool-setter detection below and Run it on Job. Follow the
+              machine's prompts. If the same fitted probe is already measured
+              and active, reuse that measurement and continue. There is no
+              automatic bracket positioning.
             </p>
-            {target && (
-              <FieldDescription>
-                Expected machine XY: {target[0].toFixed(3)},{" "}
-                {target[1].toFixed(3)} mm.
-              </FieldDescription>
-            )}
             <ReasonButton
-              label="Prepare probe and positioning job"
+              label="Prepare tool-setter detection"
               reason={reason}
               onClick={() => prepare(true)}
             >
-              Prepare probe and positioning job
+              Prepare tool-setter detection
             </ReasonButton>
           </>
         )}
@@ -351,25 +388,62 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
           <>
             <CalibrationIllustration kind="anchor" />
             <p>
-              After positioning finishes, dismiss its completed result. Close
-              this guide and jog Z only, slowly, until the tip is 0.1–0.5 mm
-              above the solid bracket top. Verify the gap with a suitable gauge
-              and remove the gauge before continuing. Keep XY at the expected
-              start, clear of screws. Reopen this guide; its selections stay.
+              After tool detection, dismiss its completed result. Close this
+              guide and manually jog the probe over the solid top at the
+              L-bracket's front-left elbow, clear of screws and holes. Aim about
+              5 mm left and 5 mm forward of its inner corner, with the tip
+              roughly 5 mm above the aluminium top. Reopen this guide without
+              moving the probe again.
             </p>
+            {target && (
+              <FieldDescription>
+                Expected machine XY: {target[0].toFixed(3)},{" "}
+                {target[1].toFixed(3)} mm (within{" "}
+                {reference!.startTolerance.toFixed(1)} mm). The bracket is at
+                the front left of the bed.
+              </FieldDescription>
+            )}
             <ParameterField
               id={`${id}-gap`}
               parameter={{
-                label: "Verified gap above bracket top",
+                label: "Estimated gap above bracket top",
                 unit: "mm",
                 min: 0.1,
-                max: 0.5,
-                step: 0.05,
-                default: 0.2,
+                max: 5,
+                step: 0.1,
+                default: 5,
               }}
               field={probingField(form, "gap")}
               disabled={false}
             />
+            {(
+              [
+                ["maxX", "Maximum left search · X−"],
+                ["maxY", "Maximum front search · Y−"],
+                ["maxDown", "Maximum downward search · Z−"],
+              ] as const
+            ).map(([name, label]) => (
+              <ParameterField
+                key={name}
+                id={`${id}-${name}`}
+                parameter={{
+                  label,
+                  unit: "mm",
+                  min: 0.4,
+                  max: 10,
+                  step: 0.1,
+                  default: 6,
+                }}
+                field={probingField(form, name)}
+                disabled={false}
+              />
+            ))}
+            <FieldDescription>
+              These limits are total search travel from each search's start, not
+              the probe's safe deflection. A roughly 5 mm top gap needs more
+              than 5 mm downward search. Choose limits for the actual
+              clearances; failure to trigger stops the job without retrying.
+            </FieldDescription>
             <p>
               With the spindle stopped and the machine stationary: read the
               released signal, gently trigger the probe and hold it while
@@ -388,6 +462,9 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
               label={readLabel}
               reason={
                 reason ??
+                (!activeProbe
+                  ? "Use tool-setter detection to make the fitted probe active, then position manually before checking its signal."
+                  : null) ??
                 (!machine.availability.readSwitches.allowed
                   ? machine.availability.readSwitches.reason
                   : null)
@@ -406,12 +483,14 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
         {draft.step === 2 && (
           <>
             <p>
-              The first search starts at the checked near-surface pose and is
-              limited to {(draft.gap + 0.1).toFixed(2)} mm at 30 mm/min. Further
-              top touches are limited to 0.4 mm at 15 mm/min. It then rises 5 mm
-              above the touched top, moves into the pocket and probes the two
-              inner walls, releasing X before Y. Each successful contact must be
-              received before the next step.
+              The first search starts at your manually positioned,
+              signal-checked pose and is limited to {draft.maxDown.toFixed(2)}{" "}
+              mm down at 30 mm/min. Further top touches are limited to 0.4 mm at
+              15 mm/min. It then rises 5 mm above the touched top, moves into
+              the pocket and probes the two inner walls with limits of{" "}
+              {draft.maxX.toFixed(2)} mm left and {draft.maxY.toFixed(2)} mm
+              forward, releasing X before Y. Each successful contact must be
+              received and verified before the next step.
             </p>
             <p>
               These are maximum travel distances, not guaranteed compression
@@ -434,8 +513,9 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
                 }
               />
               <FieldLabel htmlFor={`${id}-confirm`}>
-                The same probe is fitted, the gap is measured, the gauge is
-                removed, and the bracket, pocket and complete travel are clear.
+                The same measured probe remains fitted and connected, it is over
+                the solid bracket top, the search limits match the clearances,
+                and the pocket and complete travel are clear.
               </FieldLabel>
             </Field>
           </>

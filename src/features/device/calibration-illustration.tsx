@@ -60,6 +60,36 @@ export function CalibrationIllustration({
           <text x="24" y="35" fill="var(--foreground)">
             Top view · back +Y ↑ · right +X →
           </text>
+          <path d="M450 75 V112" stroke="var(--foreground)" strokeWidth="3" />
+          <circle
+            cx="450"
+            cy="118"
+            r="6"
+            fill="none"
+            stroke="var(--foreground)"
+            strokeWidth="2"
+          />
+          <rect
+            x="420"
+            y="158"
+            width="75"
+            height="15"
+            fill="var(--muted-foreground)"
+          />
+          <path
+            d="M470 125 V156 M465 125 H475 M465 156 H475"
+            stroke="var(--primary)"
+            strokeWidth="2"
+          />
+          <text x="405" y="64" fill="var(--foreground)">
+            Side view
+          </text>
+          <text x="480" y="143" fill="var(--foreground)">
+            ~5 mm
+          </text>
+          <text x="410" y="196" fill="var(--foreground)">
+            Above top
+          </text>
         </>
       ) : (
         <>
