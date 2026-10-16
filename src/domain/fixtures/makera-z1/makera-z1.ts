@@ -67,6 +67,12 @@ export class MakeraZ1 extends FixtureKit {
     name: "Anchor 1",
     reference:
       "The supplied L-bracket, pinned and secured in its normal Anchor 1 position",
+    fixtureIds: [new Z1LBracketThick().id, new Z1LBracketThin().id],
+    params: {
+      corner: "front-left",
+      distance: [10, 10] as [number, number],
+      depth: 2,
+    },
   } as const
   override readonly facingEntryPockets = Z1_MDF_ENTRY_POCKETS
   /** A conservative square around the modeled setter opening, with 2 mm minimum clearance. */

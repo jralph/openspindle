@@ -17,6 +17,7 @@ import type { ProbingTask } from "../probing/strategy"
 import type { Tool } from "../tools/tool"
 import { fileKind, pcbKind, unsupportedKind } from "./kept-nc"
 import { facingKind } from "./facing-kind"
+import { anchorCalibrationIssue } from "../anchors/calibration"
 import type {
   Operation,
   Phase,
@@ -134,6 +135,14 @@ const probingKind: OperationKind<"probing"> = {
     const method = machine && methodFor(source, machine, plate)
     if (!machine || !method) return fail(unsupported(operation, kit))
     const subject = operationSubject(operation.id)
+    const calibrationIssue =
+      source.task === "origin"
+        ? anchorCalibrationIssue(source, plate.setup, kit)
+        : null
+    if (calibrationIssue)
+      return fail(
+        error("anchor-calibration-invalid", calibrationIssue, { subject })
+      )
     const edit: QuickFix = { kind: "edit-operation", operationId: operation.id }
     const probe = boundProbe(
       operation,

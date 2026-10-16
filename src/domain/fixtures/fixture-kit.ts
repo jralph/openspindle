@@ -9,6 +9,7 @@ import type { FirmwareModel } from "../firmware/firmware-model"
 import type { MachineOrigin } from "../plate/work-origin"
 import type { Result } from "../primitives"
 import type { MachineProbing } from "../probing/strategy"
+import type { OriginParams } from "../probing/tasks/origin/params"
 import type { Fixture } from "./fixture"
 import type { MachineBed } from "./machine-bed"
 
@@ -88,6 +89,8 @@ export abstract class FixtureKit {
     readonly anchorId: string
     readonly name: string
     readonly reference: string
+    readonly fixtureIds: readonly string[]
+    readonly params: Pick<OriginParams, "corner" | "distance" | "depth">
   } | null = null
   /** Modeled recesses only: the operator must verify clearance on the installed bed. */
   readonly facingEntryPockets: readonly {

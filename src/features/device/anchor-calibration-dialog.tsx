@@ -20,6 +20,10 @@ import {
 } from "@/app/workspace/workspace-context"
 import { kitForSetup } from "@/domain/fixtures/catalog"
 import type { FixtureKit } from "@/domain/fixtures/fixture-kit"
+import {
+  anchorCalibrationParams,
+  anchorCalibrationSetup,
+} from "@/domain/anchors/calibration"
 import { createPlate, createPlateSetup } from "@/domain/plate/plate"
 import { newProbingOperation, strategyById } from "@/domain/probing/strategies"
 import { machineId } from "@/machine/contract"
@@ -40,6 +44,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
   const [chosen, setChosen] = useState("")
+  const [fixtureId, setFixtureId] = useState("")
   const [confirmedSetup, setConfirmedSetup] = useState<string | null>(null)
   const strategy = strategyById("inside-corner")!
   const probes = kit.probing
@@ -52,11 +57,15 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
     (!chosen ? probes.at(0)?.tool : undefined)
   const device = machine.connection.device
   const anchors = machine.anchors.value
+  const references = kit.fixtures.filter((entry) =>
+    reference?.fixtureIds.includes(entry.fixture.id)
+  )
   const setupKey = JSON.stringify({
     deviceId: placement.deviceId,
     connectionId: machine.connection.id,
     tool,
     anchors,
+    fixtureId,
   })
   const confirmed = confirmedSetup === setupKey
   const changeStep = (next: number) => {
@@ -89,6 +98,8 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   if (!reason && !tool)
     reason =
       "Add a compatible 3D touch probe with its effective ball diameter to the library."
+  if (!reason && !references.some((entry) => entry.fixture.id === fixtureId))
+    reason = "Select the L-bracket fitted at Anchor 1."
   const prepare = () => {
     if (
       reason ||
@@ -100,10 +111,20 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
       !kit.probing
     )
       return
+    const setup = anchorCalibrationSetup(
+      createPlateSetup({ stock: null, stockSource: "assigned", ...placement }),
+      kit,
+      fixtureId
+    )
+    const params = anchorCalibrationParams(kit)
+    if (!setup.ok || !params) {
+      toast.error(
+        setup.ok ? "No calibration routine is available." : setup.error
+      )
+      return
+    }
     const plate = {
-      ...createPlate(
-        createPlateSetup({ stock: null, stockSource: "assigned", ...placement })
-      ),
+      ...createPlate(setup.value),
       name: `Calibrate ${reference.name}`,
     }
     const added = newProbingOperation(plate, tool, strategy, kit.probing)
@@ -122,14 +143,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
             name: `Calibrate ${reference.name} — inside corner`,
             source: {
               ...source,
-              params: {
-                ...source.params,
-                corner: "front-left",
-                axes: "xy",
-                distance: [10, 10],
-                depth: 2,
-                placement: { kind: "probe-position" },
-              },
+              params,
               anchorCalibration: {
                 anchorId: reference.anchorId,
                 deviceId: machineId(device),
@@ -185,6 +199,30 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
         {step === 0 && (
           <>
             <CalibrationIllustration kind="anchor" />
+            <Field>
+              <FieldLabel htmlFor={`${id}-reference`}>
+                Installed L-bracket
+              </FieldLabel>
+              <OptionSelect
+                id={`${id}-reference`}
+                value={fixtureId}
+                options={[
+                  { value: "", label: "Choose the fitted bracket" },
+                  ...references.map(({ fixture }) => ({
+                    value: fixture.id,
+                    label: `${fixture.name} · ${fixture.model.bounds.max[2] - fixture.model.bounds.min[2]} mm tall`,
+                  })),
+                ]}
+                onValueChange={(value) => {
+                  setFixtureId(value)
+                  setConfirmedSetup(null)
+                }}
+              />
+              <FieldDescription>
+                The calibration plate includes this bracket at its normal pinned
+                position.
+              </FieldDescription>
+            </Field>
             <p>
               {reference?.reference ?? "Choose a supported machine."}. Remove
               stock from the corner and check that its inner faces and top are
@@ -217,15 +255,18 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
             <CalibrationIllustration kind="anchor" />
             <p>
               Home the machine, install and cable the selected probe, and verify
-              that touching it triggers the probe signal. Before Run, jog over
-              solid bracket top about 5 mm left and 5 mm forward of the inner
-              corner, with Z clear above it.
+              that touching it triggers the probe signal. On Run, the program
+              raises to machine clearance, then travels to the stored anchor
+              plus X−5 mm, Y−5 mm, over the solid bracket top at the bottom
+              left. Manual jogging to the start is not required.
             </p>
             <p>
               The cycle touches the top, moves into the pocket, then probes the
               left and front inner walls. Its X/Y distances are 10 mm and its
               side contact is 2 mm below the bracket top. Check the complete
-              route against the installed bracket.
+              route against the installed bracket. The existing stored anchor
+              must already be close enough to put the start on the bracket; this
+              is a fine calibration, not recovery of a missing reference.
             </p>
           </>
         )}

@@ -35,6 +35,7 @@ import { placementHeight } from "@/domain/probing/placement"
 import { outlineTarget } from "@/domain/probing/tasks/outline/params"
 import { itemEdges, sameEdge } from "@/domain/plate/item-edges"
 import { kitForPlate } from "@/domain/fixtures/catalog"
+import { anchorCalibrationIssue } from "@/domain/anchors/calibration"
 import { methodFor } from "@/domain/probing/strategies"
 import {
   PROBE_3D_TOOL,
@@ -437,10 +438,11 @@ function operationResults(
       found = probed.found
       if (
         source.anchorCalibration &&
-        (source.params.routine !== "inside-corner" ||
-          source.params.corner !== "front-left" ||
-          source.params.axes !== "xy" ||
-          source.params.placement.kind !== "probe-position")
+        anchorCalibrationIssue(
+          source,
+          subject.plate.setup,
+          kitForPlate(subject.plate)
+        )
       )
         found = null
     } else {
