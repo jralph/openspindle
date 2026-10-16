@@ -33,6 +33,7 @@ import { g32Grids } from "./wired-probe/grid"
 import { touchPoints } from "./wired-probe/touch-off"
 import { CLEARANCE_Z } from "./wired-probe/travel"
 import { Z1Bed } from "./z1-bed"
+import { boundedAnchorNc, anchorPositioningNc } from "./bounded-anchor"
 import { SETTER_CUTOUT_RADIUS, SETTER_TOP, SETTER_XY } from "./tool-setter"
 import {
   Z1_WORK_AREA,
@@ -63,6 +64,8 @@ export const LEGACY_BED_FRAME = { anchor1: [12, 12], z: 6 } as const
  */
 export class MakeraZ1 extends FixtureKit {
   override readonly anchorCalibration = {
+    boundedNc: boundedAnchorNc,
+    positioningNc: anchorPositioningNc,
     anchorId: "anchor-1",
     name: "Anchor 1",
     reference:

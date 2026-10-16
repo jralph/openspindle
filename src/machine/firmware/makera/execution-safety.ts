@@ -1,10 +1,11 @@
 import { isSimulator, readNcBlock, programParts } from "../../contract/index.ts"
 import type { FirmwareAdapter } from "../adapter.ts"
+import { boundedAnchorRequirement } from "./bounded-anchor.ts"
 
-const PROBE_QUARANTINE =
-  "Physical probing is disabled after a probe collision: the trigger path is unverified. Use the simulator only; there is no override."
-const FILE_EXECUTION_QUARANTINE =
-  "File and macro execution commands are disabled during the probing quarantine. Run a reviewed program from Job so its contents can be checked."
+const UNBOUNDED_PROBE =
+  "This probing routine has no verified input check and bounded contact sequence. For Anchor 1, recreate it with Auto calibrate Anchor 1 and complete the live signal check."
+const UNINSPECTED_EXECUTION =
+  "Direct file and macro execution cannot verify the program's probing safety. Prepare the program and Run from Job so its contents can be checked."
 
 /** Only exact, read-only shell queries may bypass the plain-NC parser. */
 const READ_ONLY_SHELL = /^(?:model|diagnose|version|help)$/i
@@ -15,7 +16,10 @@ const READ_ONLY_CONFIG = /^config-get (?:sd|cached) [a-zA-Z0-9_.-]+$/
  * Do not rely on lexer words alone: an invalid block deliberately has no words.
  * Integer command families cover every written subcode (M480.10 included).
  */
-function textExecutionIssue(source: string): string | null {
+function textExecutionIssue(
+  source: string,
+  allowProbeSetup = false
+): string | null {
   for (const [index, line] of source.split(/\r\n?|\n/).entries()) {
     const block = readNcBlock(line)
     const code = block.code
@@ -30,17 +34,22 @@ function textExecutionIssue(source: string): string | null {
       const probe =
         (letter === "M" && [480, 491, 495].includes(family)) ||
         (letter === "G" && [29, 30, 31, 32, 38].includes(family)) ||
-        (letter === "T" && family === 9999)
-      if (probe) return `Line ${index + 1}: ${PROBE_QUARANTINE}`
+        (letter === "T" &&
+          family === 9999 &&
+          !(
+            allowProbeSetup &&
+            block.words.some((each) => each.letter === "M" && each.value === 6)
+          ))
+      if (probe) return `Line ${index + 1}: ${UNBOUNDED_PROBE}`
       if (
         (letter === "M" && [23, 24, 32, 97, 98, 99, 601].includes(family)) ||
         (letter === "G" && [65, 66].includes(family))
       )
-        return `Line ${index + 1}: ${FILE_EXECUTION_QUARANTINE}`
+        return `Line ${index + 1}: ${UNINSPECTED_EXECUTION}`
     }
     if (READ_ONLY_SHELL.test(code) || READ_ONLY_CONFIG.test(code)) continue
     if (block.problem)
-      return `Line ${index + 1}: Unrecognized or malformed commands are disabled during the probing quarantine. Only plain NC and supported read-only diagnostic shell queries are accepted.`
+      return `Line ${index + 1}: Unrecognized or malformed commands cannot be checked. Only plain NC and supported read-only diagnostic shell queries are accepted.`
   }
   return null
 }
@@ -49,15 +58,25 @@ function textExecutionIssue(source: string): string | null {
 export const assessMakeraPhysicalProgram: NonNullable<
   FirmwareAdapter["assessPhysicalProgram"]
 > = (source, program) => {
-  const issue = textExecutionIssue(source) ?? textExecutionIssue(program.text)
-  if (issue) return issue
+  try {
+    const probeCheck = boundedAnchorRequirement(source, program)
+    if (probeCheck) return { issue: null, probeCheck }
+  } catch (error) {
+    return {
+      issue:
+        error instanceof Error ? error.message : "Invalid bounded probe plan.",
+    }
+  }
+  const issue =
+    textExecutionIssue(source, true) ?? textExecutionIssue(program.text, true)
+  if (issue) return { issue }
   for (const part of programParts(program)) {
     const extraIssue = textExecutionIssue(
       [...part.before, ...part.after].join("\n")
     )
-    if (extraIssue) return extraIssue
+    if (extraIssue) return { issue: extraIssue }
   }
-  return null
+  return { issue: null }
 }
 
 /** Connection admission never scans a prepared program again or trusts caller-supplied metadata. */
@@ -67,7 +86,7 @@ export const makeraExecutionIssue: NonNullable<
   if (input.device && isSimulator(input.device)) return null
   if (input.kind === "console") return textExecutionIssue(input.source)
   if (!input.program)
-    return "Resume is disabled for a physical program this connection does not own and cannot inspect during the probing quarantine. Stop remains available."
+    return "This connection cannot resume a physical program it does not own and cannot inspect. Stop remains available."
   if (input.program.physicalExecutionIssue === undefined)
     return "This program has no trusted physical execution assessment. Prepare it again before Run or Resume."
   return input.program.physicalExecutionIssue

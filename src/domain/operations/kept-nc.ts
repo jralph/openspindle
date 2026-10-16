@@ -6,6 +6,7 @@
  */
 
 import { PLAIN_NC, withoutClosingPark } from "../compile/nc-unit"
+import { isAnchorPositioningNc } from "../anchors/calibration"
 import { error, operationSubject } from "../diagnostics"
 import type { FixtureKit } from "../fixtures/fixture-kit"
 import type { Plate } from "../plate/plate"
@@ -40,8 +41,15 @@ export const fileKind: OperationKind<"file"> = {
   verbatim: true,
   generated: false,
   phase: ({ source }) => source.phase ?? "machining",
-  resolve: ({ source }, _plate, { kit }) =>
-    ok(plain(source.park ? source.nc : withoutClosingPark(source.nc, kit))),
+  resolve: ({ source }, plate, { kit }) => {
+    const nc = source.park ? source.nc : withoutClosingPark(source.nc, kit)
+    return ok({
+      ...plain(nc),
+      standalone:
+        plate.operations.length === 1 &&
+        isAnchorPositioningNc(nc, plate.setup, kit),
+    })
+  },
 }
 
 export const pcbKind: OperationKind<"pcb"> = {

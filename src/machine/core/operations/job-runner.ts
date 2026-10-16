@@ -18,6 +18,7 @@ import { MachineError, abortError } from "../errors.ts"
 import { PartedCompletion } from "../parted-completion.ts"
 import { freshStatus, requireAdmission, requireExecution } from "./context.ts"
 import type { OperationContext } from "./context.ts"
+import { runInlineProbe } from "./inline-probe.ts"
 
 const STEP_MS = 10_000
 /** Upload, readback and both preflights together, for each file sent. */
@@ -116,6 +117,11 @@ export async function prepareAndStart(
   hooks: JobRunnerHooks
 ): Promise<void> {
   requireExecution(context, { kind: "program", program })
+  if (program.probeCheck) {
+    await preflight(context)
+    await runInlineProbe(context, program, hooks)
+    return
+  }
   const { session, adapter, clock } = context
   const job = adapter.job
   const parts = programParts(program)

@@ -1,5 +1,8 @@
 import { z } from "zod"
-import { AnchorConfigurationSchema } from "@/machine/contract"
+import {
+  AnchorConfigurationSchema,
+  ProbeCheckBindingSchema,
+} from "@/machine/contract"
 import type { AnchorConfiguration } from "@/machine/contract"
 import { EntityIdSchema, fail, ok } from "../primitives"
 import type { Result } from "../primitives"
@@ -16,6 +19,13 @@ export const AnchorCalibrationSchema = z.strictObject({
   anchorId: EntityIdSchema,
   deviceId: z.string().min(1).max(500),
   expectedAnchors: AnchorConfigurationSchema,
+  approach: z
+    .strictObject({
+      binding: ProbeCheckBindingSchema,
+      gap: z.number().finite().min(0.1).max(0.5),
+      diameter: z.number().finite().min(0.5).max(3.2),
+    })
+    .optional(),
 })
 export type AnchorCalibration = z.infer<typeof AnchorCalibrationSchema>
 
@@ -38,6 +48,31 @@ export function anchorCalibrationParams(kit: FixtureKit): OriginParams | null {
       offset: [...originStartOffset(params)],
     },
   }
+}
+
+/** Only the kit's exact, anchored setup program owns its modes and clearance travel. */
+export function isAnchorPositioningNc(
+  nc: string,
+  setup: PlateSetup,
+  kit: FixtureKit
+): boolean {
+  const generate = kit.anchorCalibration?.positioningNc
+  const placement = anchorCalibrationParams(kit)?.placement
+  const stored = setup.anchors
+  if (
+    !generate ||
+    placement?.kind !== "anchor" ||
+    stored?.source !== "firmware-config" ||
+    stored.deviceId !== setup.deviceId
+  )
+    return false
+  const anchor = stored.anchors.find((item) => item.id === placement.anchorId)
+  if (!anchor) return false
+  const [dx, dy] = placement.offset
+  return (
+    nc ===
+    generate([anchor.machinePosition[0] + dx, anchor.machinePosition[1] + dy])
+  )
 }
 
 /** Includes the selected canonical reference at its normal pinned position, not profile defaults. */
@@ -84,6 +119,8 @@ export function anchorCalibrationIssue(
 ): string | null {
   const calibration = source.anchorCalibration
   if (!calibration) return null
+  if (!calibration.approach)
+    return "Recreate this calibration with the guide: it needs a live contact-signal check and bounded approach."
   const reference = kit.anchorCalibration
   const expected = anchorCalibrationParams(kit)
   const expectedPlacement = expected?.placement
@@ -112,7 +149,7 @@ export function anchorCalibrationIssue(
     params.routine !== expected.routine ||
     params.corner !== expected.corner ||
     params.axes !== expected.axes ||
-    params.depth !== expected.depth ||
+    params.depth !== Math.max(2, calibration.approach.diameter / 2 + 0.5) ||
     params.distance.some((value, axis) => value !== expected.distance[axis]) ||
     params.placement.kind !== "anchor" ||
     expectedPlacement?.kind !== "anchor" ||
@@ -123,6 +160,21 @@ export function anchorCalibrationIssue(
     )
   )
     return `Recreate this calibration with Auto calibrate ${reference?.name ?? "anchor"}: it needs the fixed anchored start.`
+  const nativeAnchor = calibration.expectedAnchors.anchors.find(
+    (item) => item.id === reference.anchorId
+  )
+  const checked = calibration.approach.binding
+  if (
+    !nativeAnchor ||
+    checked.tool !== source.probe ||
+    Math.abs(
+      checked.position[0] - nativeAnchor.x - expectedPlacement.offset[0]
+    ) > 0.01 ||
+    Math.abs(
+      checked.position[1] - nativeAnchor.y - expectedPlacement.offset[1]
+    ) > 0.01
+  )
+    return "The checked probe position is not over the anchored bracket start. Reposition and check the signal again."
   const references = setup.fixtures.filter((item) =>
     reference.fixtureIds.includes(item.definition.id)
   )

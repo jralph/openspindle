@@ -270,6 +270,26 @@ export const makeraAdapter: FirmwareAdapter = {
   prepareProgram: prepareMakeraProgram,
   executionIssue: makeraExecutionIssue,
   assessPhysicalProgram: assessMakeraPhysicalProgram,
+  probeCheckTool: 9999,
+  probeContact: (text) => {
+    const match =
+      /^\[PRB:([+-]?[\d.]+),([+-]?[\d.]+),([+-]?[\d.]+):([01])\]$/.exec(
+        text.trim()
+      )
+    if (!match) return null
+    const position = [Number(match[1]), Number(match[2]), Number(match[3])] as [
+      number,
+      number,
+      number,
+    ]
+    if (
+      !position.every(
+        (value) => Number.isFinite(value) && Math.abs(value) <= COORDINATE_LIMIT
+      )
+    )
+      return null
+    return { position, success: match[4] === "1" }
+  },
   job: makeraJob,
   configuration: {
     path: MAKERA_CONFIGURATION_PATH,

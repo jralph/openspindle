@@ -234,10 +234,16 @@ class Z1Preview implements GCodeFirmware {
   readonly initialPosition?: Point3
   private readonly frame: Z1Frame
   private active: number | null = null
+  private readonly probeRadius: number
 
   constructor(setup: FirmwareSetup) {
     this.frame = new Z1Frame(setup)
     if (setup.start) this.initialPosition = setup.start
+    this.probeRadius = setup.probeRadius ?? 0
+    if (setup.initialTool !== undefined) {
+      this.initialStatus = holding(setup.initialTool)
+      this.active = setup.initialTool
+    }
   }
 
   handles(letter: "G" | "M", code: number) {
@@ -313,6 +319,14 @@ class Z1Preview implements GCodeFirmware {
       words.get("Z") ?? 0,
     ]
     if (delta.every((distance) => distance === 0)) return { moves: [] }
+    if (this.probeRadius > 0 && !delta[2] && !!delta[0] !== !!delta[1]) {
+      const axis = delta[0] ? 0 : 1
+      this.sideSearch(moves, axis, delta[axis], null, this.probeRadius, {
+        rapid: false,
+        feed: words.get("F") ?? Z1.grid.slow,
+      })
+      return { moves: moves.list }
+    }
     this.search(moves, delta, {
       rapid: false,
       feed: words.get("F") ?? Z1.grid.slow,

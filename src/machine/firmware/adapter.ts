@@ -22,6 +22,7 @@ import type {
   PlateAssists,
   PrepareResult,
   PreparedProgram,
+  ProbeCheckBinding,
   Telemetry,
 } from "../contract/index.ts"
 
@@ -148,12 +149,15 @@ export function prepareResult(
 ): PrepareResult {
   try {
     const program = adapter.prepareProgram(source)
+    const assessment = adapter.assessPhysicalProgram?.(source, program)
     return {
       ok: true,
       program: {
         ...program,
-        physicalExecutionIssue:
-          adapter.assessPhysicalProgram?.(source, program) ?? null,
+        physicalExecutionIssue: assessment?.issue ?? null,
+        ...(assessment?.probeCheck
+          ? { probeCheck: assessment.probeCheck }
+          : {}),
       },
     }
   } catch (error) {
@@ -318,7 +322,12 @@ export interface FirmwareAdapter {
   assessPhysicalProgram?: (
     source: string,
     program: PreparedProgram
-  ) => string | null
+  ) => { issue: string | null; probeCheck?: ProbeCheckBinding }
+  /** Tool whose contact input is checked at rest; separate from tool-setter calibration. */
+  probeCheckTool?: number
+  probeContact?: (
+    text: string
+  ) => { position: [number, number, number]; success: boolean } | null
   /** Constant-time admission for prepared programs; console text is bounded by its contract. */
   executionIssue?: (
     input: ExecutionContent & {

@@ -1,4 +1,4 @@
-import type { NcWord } from "@/machine/contract"
+import type { NcWord, ProbeCheckBinding } from "@/machine/contract"
 import type { FixtureDefinition } from "@/domain/fixtures/definitions"
 import type { CamMarkers } from "@/domain/nc/cam-markers"
 import type { Point3 } from "@/domain/nc/gcode"
@@ -91,6 +91,12 @@ export abstract class FixtureKit {
     readonly reference: string
     readonly fixtureIds: readonly string[]
     readonly params: Pick<OriginParams, "corner" | "distance" | "depth">
+    readonly boundedNc?: (
+      binding: ProbeCheckBinding,
+      gap: number,
+      diameter: number
+    ) => string
+    readonly positioningNc?: (xy: readonly [number, number]) => string
   } | null = null
   /** Modeled recesses only: the operator must verify clearance on the installed bed. */
   readonly facingEntryPockets: readonly {

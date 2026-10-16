@@ -2,7 +2,8 @@ import type { FixtureKit } from "@/domain/fixtures/fixture-kit"
 import type { FirmwareSetup } from "@/domain/firmware/firmware-model"
 import type { Plate } from "@/domain/plate/plate"
 import { fixtureSupportHeight } from "@/domain/fixtures/definitions"
-import { fixtureSolids } from "@/domain/fixtures/solids"
+import { fixtureSolids, standsUnder } from "@/domain/fixtures/solids"
+import { anchorCalibrationIssue } from "@/domain/anchors/calibration"
 
 /**
  * Where the plate is on its machine, as its firmware's moves are placed, with its program
@@ -29,6 +30,36 @@ export function firmwareSetup(plate: Plate, kit: FixtureKit): FirmwareSetup {
   }
   const { firmware } = kit
   if (!firmware) return setup
+  const source =
+    plate.operations.length === 1 ? plate.operations[0].source : null
+  if (
+    source?.kind === "probing" &&
+    source.task === "origin" &&
+    source.anchorCalibration?.approach &&
+    !anchorCalibrationIssue(source, plate.setup, kit)
+  ) {
+    const { binding, gap, diameter } = source.anchorCalibration.approach
+    const bed = firmware.bedPosition(setup, binding.position)
+    const top = Math.max(
+      setup.supportZ,
+      ...setup.solids
+        .filter((solid) => standsUnder(solid, bed))
+        .map((solid) => solid.max[2])
+    )
+    return {
+      ...setup,
+      // Machine Z depends on the measured stylus length. The bracket model + verified gap
+      // place its tip for this nominal preview; never invent a setter-derived absolute Z.
+      start: [
+        bed[0] - workOrigin[0],
+        bed[1] - workOrigin[1],
+        top + gap - workOrigin[2],
+      ],
+      fixedStart: true,
+      initialTool: binding.tool,
+      probeRadius: diameter / 2,
+    }
+  }
   const [x, y, z] = firmware.bedPosition(setup, firmware.home)
   return {
     ...setup,

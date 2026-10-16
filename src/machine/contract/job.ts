@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { ProbeCheckBindingSchema } from "./probe-check.ts"
 import { PlateAssistsSchema } from "./assists.ts"
 import { HEIGHT_MAP_LIMITS } from "./height-map.ts"
 import {
@@ -81,6 +82,8 @@ export const PreparedProgramSchema = z.object({
   changeCount: z.int().nonnegative(),
   /** Computed by the trusted preparer, never accepted in a Run request. Undefined is unassessed. */
   physicalExecutionIssue: z.string().nullable().optional(),
+  /** Trusted preparer requirement for an inline, contact-by-contact verified routine. */
+  probeCheck: ProbeCheckBindingSchema.optional(),
   /**
    * The files the program is sent as, in order: one with every line, or parts when it exceeds
    * a file's limits. None from a main process before parts, which sent every line as one.

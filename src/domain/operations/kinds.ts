@@ -28,6 +28,8 @@ import type {
 
 /** The NC an operation contributes and what that NC may contain. */
 export type ResolvedNc = {
+  /** A protected procedure starts at an already checked pose; composition must not move it. */
+  readonly standalone?: boolean
   readonly nc: string
   readonly policy: NcPolicy
   /** 1-based lines of `nc` where the program pauses for a review. */
@@ -175,6 +177,31 @@ const probingKind: OperationKind<"probing"> = {
           fix: { kind: "assign-tool", toolNumber: table },
         })
       )
+    if (source.task === "origin" && source.anchorCalibration?.approach) {
+      const approach = source.anchorCalibration.approach
+      const generate = kit.anchorCalibration?.boundedNc
+      if (
+        !generate ||
+        plate.operations.length !== 1 ||
+        operation.stopBefore ||
+        probe.value.tool.diameter !== approach.diameter ||
+        probe.value.number !== approach.binding.tool ||
+        operation.tools.some((binding) => binding.local !== binding.plate)
+      )
+        return fail(
+          error(
+            "anchor-calibration-invalid",
+            "Run this bounded calibration alone with the original checked probe and diameter. Recreate it with the guide after changes.",
+            { subject }
+          )
+        )
+      return ok({
+        nc: generate(approach.binding, approach.gap, approach.diameter),
+        standalone: true,
+        policy: { probing: "origin", anchoredProbing: false },
+        reviewLines: [],
+      })
+    }
     const generated = generateProbing(method, source, {
       plate,
       probe: probe.value,

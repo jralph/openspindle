@@ -10,6 +10,7 @@ import type {
   SimulatedJogReceipt,
 } from "../contract/simulator-jog.ts"
 import { SimulatedJogOwner } from "./simulated-jog.ts"
+import { ProbeSignalCheck } from "./probe-check.ts"
 import {
   freshDiagnosticStatus,
   requireAdmission,
@@ -207,6 +208,8 @@ export class MachineController {
     readHeightMap: { deferred: null, running: false, callers: new Set() },
   }
   private job: JobState | null = null
+  private readonly probeSignal = new ProbeSignalCheck()
+  private probeRead: { before: Telemetry; changed: boolean } | null = null
   private tracker: PartedCompletion | null = null
   /** What the job's later parts play with, until it ends. */
   private running: {
@@ -708,6 +711,15 @@ export class MachineController {
     signal?: AbortSignal
   ): Promise<MachineSnapshot> {
     const command = parse(MachineCommandSchema, input)
+    if (
+      this.running?.program.probeCheck &&
+      (command.type === "pause" || command.type === "resume")
+    )
+      throw new MachineError(
+        "refused",
+        "Bounded probing cannot pause or resume between contacts. Stop remains available."
+      )
+    this.probeSignal.invalidate()
     this.admitNow({ key: command.type, command })
     if (
       (command.type === "lightBrightness" ||
@@ -735,6 +747,7 @@ export class MachineController {
   /** Sends a line typed in the console, admitted like any command; the console shows the reply. */
   async sendConsoleLine(input: unknown): Promise<MachineSnapshot> {
     const line = parse(ConsoleLineSchema, input)
+    this.probeSignal.invalidate()
     const issue = this.executionIssue({ kind: "console", source: line })
     if (issue) throw new MachineError("refused", issue)
     this.admitNow({ key: "console" })
@@ -762,6 +775,7 @@ export class MachineController {
 
   /** Preempts everything: transfer cancel, operations, deferred reads, then the halt. */
   async stop(): Promise<MachineSnapshot> {
+    this.probeSignal.invalidate()
     const session = this.session
     if (!session?.ready)
       throw new MachineError("not-connected", "Connect a device first.")
@@ -866,6 +880,10 @@ export class MachineController {
         Object.freeze(part)
       }
       Object.freeze(result.program.parts)
+      if (result.program.probeCheck) {
+        Object.freeze(result.program.probeCheck.position)
+        Object.freeze(result.program.probeCheck)
+      }
       Object.freeze(result.program)
     }
     return result
@@ -887,6 +905,7 @@ export class MachineController {
     this.refuseUsedRun(request.id)
     this.admitNow({ key: "run" })
     const program = prepared.program
+    if (!program.probeCheck) this.probeSignal.invalidate()
     this.rememberRun(request.id)
     const now = this.ports.clock.now()
     const parts = programParts(program)
@@ -919,7 +938,14 @@ export class MachineController {
       await this.operate("run", `Starting ${request.name}`, (context) =>
         prepareAndStart(context, request, program, this.jobHooks())
       )
+      if (program.probeCheck) this.running = null
     } catch (error) {
+      if (
+        program.probeCheck &&
+        !(error instanceof MachineError && error.code === "cancelled")
+      )
+        this.lockout =
+          "Bounded probing did not complete. Stop and inspect the machine before any new motion. No step was retried."
       this.failJob(error)
       throw error
     }
@@ -1042,7 +1068,33 @@ export class MachineController {
    */
   async readSwitches(): Promise<SwitchReport> {
     this.admitNow({ key: "readSwitches" })
-    return this.operate("inspection", "Reading switches", readSwitches)
+    return this.operate("inspection", "Reading switches", async (context) => {
+      try {
+        const { report, before, after } = await readSwitches(
+          context,
+          (initial) => {
+            this.probeRead = { before: initial, changed: false }
+          }
+        )
+        if (this.probeRead?.changed) this.probeSignal.invalidate()
+        else if (this.adapter.probeCheckTool !== undefined)
+          this.probeSignal.read(
+            report.probe,
+            before,
+            after,
+            this.connectionId(context.session),
+            this.ports.clock.now(),
+            this.adapter.probeCheckTool
+          )
+        this.publish()
+        return report
+      } catch (error) {
+        this.probeSignal.invalidate()
+        throw error
+      } finally {
+        this.probeRead = null
+      }
+    })
   }
 
   // ── Settings ───────────────────────────────────────────────────────────
@@ -1055,6 +1107,7 @@ export class MachineController {
    * own moves use its own anchors after it restarts.
    */
   async writeAnchors(input: unknown): Promise<WriteAnchorsResult> {
+    this.probeSignal.invalidate()
     const request = parse(WriteAnchorsRequestSchema, input)
     const checkProposal = (session: MachineSession | null) => {
       if (
@@ -1141,6 +1194,7 @@ export class MachineController {
   }
 
   async writeConfiguration(input: unknown): Promise<WriteConfigurationResult> {
+    this.probeSignal.invalidate()
     const request = parse(WriteConfigurationRequestSchema, input)
     this.admitNow({ key: "writeConfiguration" })
     if (
@@ -1192,6 +1246,25 @@ export class MachineController {
 
   private onStatus(session: MachineSession, telemetry: Telemetry) {
     if (session !== this.session) return
+    if (
+      this.probeRead &&
+      this.adapter.probeCheckTool !== undefined &&
+      !this.probeSignal.stationaryRead(
+        this.probeRead.before,
+        telemetry,
+        this.ports.clock.now(),
+        this.adapter.probeCheckTool
+      )
+    )
+      this.probeRead.changed = true
+    if (
+      !this.probeSignal.validPose(
+        telemetry,
+        this.connectionId(session),
+        this.ports.clock.now()
+      )
+    )
+      this.probeSignal.invalidate()
     if (this.tracker) this.applyTracker(this.tracker.status(telemetry))
     this.maybeReadAnchorsOnConnect()
     this.scheduleDeferred()
@@ -1205,12 +1278,18 @@ export class MachineController {
   }
 
   private onTick(session: MachineSession, now: number) {
-    if (session !== this.session || !this.tracker) return
+    if (session !== this.session) return
+    if (this.probeSignal.value && now > this.probeSignal.value.expiresAt) {
+      this.probeSignal.invalidate()
+      this.publish()
+    }
+    if (!this.tracker) return
     this.applyTracker(this.tracker.tick(now))
   }
 
   private onClosed(session: MachineSession, error: string | null) {
     if (session !== this.session) return
+    this.probeSignal.invalidate()
     this.invalidateDirect()
     this.session = null
     this.lastError = error
@@ -1432,6 +1511,16 @@ export class MachineController {
         clock: this.ports.clock,
         signal: activity.controller.signal,
         streaming: () => this.streaming(session.store.telemetry),
+        authorizeProbeCheck: (binding) => {
+          if (session.device && isSimulator(session.device)) return
+          this.probeSignal.consume(
+            binding,
+            session.store.telemetry,
+            this.connectionId(session),
+            this.ports.clock.now()
+          )
+          this.publish()
+        },
         resumeProgram: () => {
           const running = this.running
           if (
@@ -1631,6 +1720,16 @@ export class MachineController {
     if (ready) status = "connected"
     else if (session) status = "connecting"
     const available = availability(context)
+    if (this.running?.program.probeCheck && isJobActive(this.job)) {
+      const blocked = {
+        allowed: false,
+        deferred: false,
+        reason:
+          "Bounded probing cannot pause or resume between contacts. Stop remains available.",
+      }
+      available.pause = blocked
+      available.resume = blocked
+    }
     const arm =
       ready?.device && isSimulator(ready.device)
         ? available.jog
@@ -1646,6 +1745,7 @@ export class MachineController {
     }
     return {
       revision,
+      probeCheck: this.probeSignal.value,
       simulatorController: {
         arm,
         step: this.direct?.owner.availability("step") ?? inactive,

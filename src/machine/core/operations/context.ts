@@ -1,4 +1,8 @@
-import type { Telemetry, PreparedProgram } from "../../contract/index.ts"
+import type {
+  Telemetry,
+  PreparedProgram,
+  ProbeCheckBinding,
+} from "../../contract/index.ts"
 import { FAILURE_LINES, excerpt } from "../../firmware/adapter.ts"
 import type {
   FirmwareAdapter,
@@ -23,6 +27,8 @@ export type OperationContext = {
   readonly streaming: () => boolean
   /** Currently owned uploaded program, including part additions; null for external playback. */
   readonly resumeProgram?: () => PreparedProgram | null
+  /** Consumes this connection's one-use verified released/triggered/released input proof. */
+  readonly authorizeProbeCheck?: (binding: ProbeCheckBinding) => void
   /** Admission against fresh telemetry, ignoring the operation's own activity. */
   readonly admit: (request: AdmissionRequest, telemetry: Telemetry) => Admission
 }
