@@ -6,9 +6,40 @@ import { FieldDescription } from "@/components/ui/field"
 import { StageCard } from "@/features/job/stage-card"
 import { probeProfile } from "@/domain/tools/tool"
 import type { Tool } from "@/domain/tools/tool"
-import { isFresh } from "@/machine/contract"
+import { isFresh, isHeightCompensationOff } from "@/machine/contract"
 import type { MachineSnapshot, ProbeCheckBinding } from "@/machine/contract"
 import { useMachineHost, useMachineSnapshot } from "@/platform/machine"
+import { log } from "@/app/errors/log"
+
+function signalWaitingReason(
+  machine: MachineSnapshot,
+  toolNumber: number | null,
+  disabled: boolean
+): string | null {
+  if (disabled) return "Finish or dismiss the current calibration run first."
+  if (machine.connection.status !== "connected")
+    return "Connect the machine before checking the probe signal."
+  const status = machine.telemetry
+  if (!isFresh(status, Date.now())) return "Waiting for fresh machine status."
+  if (status.state !== "Idle")
+    return `The machine reports ${status.state}; the signal check starts when it is Idle.`
+  if (status.job !== null) return "Wait for the machine's program to finish."
+  if (toolNumber === null) return "Select a supported XYZ probe in this guide."
+  if (status.tool !== toolNumber)
+    return `The active tool is ${status.tool === null ? "unknown" : `T${status.tool}`}; select and measure the fitted probe as T${toolNumber}.`
+  if (status.toolOffset === null)
+    return "The probe has no reported tool offset. Run tool-setter detection first."
+  if (!status.machine) return "Waiting for reported machine coordinates."
+  if (status.spindleRpm !== 0 || status.spindleOn === true)
+    return "Wait for the spindle to report stopped before touching the probe."
+  if (!isHeightCompensationOff(status)) {
+    if (status.compensationActive === true)
+      return "Height compensation is active. Clear the height map before calibration."
+    return "Waiting for the machine to confirm height compensation is off."
+  }
+  if (status.units !== "mm") return "Select millimetre mode before calibration."
+  return null
+}
 
 function requireActive(signal: AbortSignal) {
   if (signal.aborted)
@@ -44,7 +75,7 @@ function checkPose(
     status.toolOffset !== binding.toolOffset ||
     status.spindleRpm !== 0 ||
     status.spindleOn === true ||
-    status.compensation !== 0 ||
+    !isHeightCompensationOff(status) ||
     status.units !== "mm" ||
     !status.machine ||
     binding.position.some(
@@ -74,41 +105,32 @@ export function ProbeInputCheck({
 }) {
   const machine = useMachineSnapshot()
   const status = machine.telemetry
-  const ready =
-    !disabled &&
-    toolNumber !== null &&
-    machine.connection.status === "connected" &&
-    isFresh(status, Date.now()) &&
-    status.state === "Idle" &&
-    status.job === null &&
-    status.tool === toolNumber &&
-    status.toolOffset !== null &&
-    !!status.machine &&
-    status.spindleRpm === 0 &&
-    status.spindleOn !== true &&
-    status.compensation === 0 &&
-    status.units === "mm"
-  const poseKey = ready
-    ? JSON.stringify({
-        connectionId: machine.connection.id,
-        tool: status.tool,
-        toolOffset: status.toolOffset,
-        position: [status.machine!.x, status.machine!.y, status.machine!.z].map(
-          (value) => Number(value.toFixed(3))
-        ),
-      })
-    : "waiting"
+  const waitingMessage = signalWaitingReason(machine, toolNumber, disabled)
+  const ready = waitingMessage === null
+  useEffect(() => {
+    log.info("Probe signal watch readiness", {
+      reason: waitingMessage ?? "ready",
+      toolNumber,
+    })
+  }, [waitingMessage, toolNumber])
+  const poseKey =
+    ready && status?.machine
+      ? JSON.stringify({
+          connectionId: machine.connection.id,
+          tool: status.tool,
+          toolOffset: status.toolOffset,
+          position: [status.machine.x, status.machine.y, status.machine.z].map(
+            (value) => Number(value.toFixed(3))
+          ),
+        })
+      : "waiting"
   return (
     <SignalWatch
       key={`${JSON.stringify(tool)}:${poseKey}`}
       tool={tool}
       toolNumber={toolNumber}
       ready={ready}
-      waitingMessage={
-        disabled
-          ? "Position the probe near the expected X/Y shown above, then leave it stationary."
-          : "Run tool-setter detection first; the probe must be active, the spindle stopped and the axes stationary."
-      }
+      waitingMessage={waitingMessage ?? "Waiting for probe status."}
       onVerified={onVerified}
     />
   )

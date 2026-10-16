@@ -1,4 +1,4 @@
-import { isFresh } from "../contract/index.ts"
+import { isFresh, isHeightCompensationOff } from "../contract/index.ts"
 import type {
   ProbeCheck,
   ProbeCheckBinding,
@@ -34,7 +34,7 @@ export class ProbeSignalCheck {
       telemetry.state === "Idle" &&
       telemetry.job === null &&
       telemetry.units === "mm" &&
-      telemetry.compensation === 0 &&
+      isHeightCompensationOff(telemetry) &&
       telemetry.spindleRpm === 0 &&
       telemetry.spindleOn !== true &&
       telemetry.tool === binding.tool &&

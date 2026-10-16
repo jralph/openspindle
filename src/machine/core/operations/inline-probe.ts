@@ -1,4 +1,4 @@
-import { readNcBlock } from "../../contract/index.ts"
+import { isHeightCompensationOff, readNcBlock } from "../../contract/index.ts"
 import type {
   ContactsMeasurement,
   PreparedProgram,
@@ -25,7 +25,7 @@ function requireStationaryProbe(context: OperationContext, status: Telemetry) {
     status.state !== "Idle" ||
     status.job !== null ||
     status.units !== "mm" ||
-    status.compensation !== 0 ||
+    !isHeightCompensationOff(status) ||
     status.tool !== context.adapter.probeCheckTool ||
     status.toolOffset === null ||
     status.spindleRpm !== 0 ||
