@@ -47,6 +47,7 @@ import { DevicePanel } from "./device-panel"
 import { HeightMapCard } from "./height-map"
 import { useDeviceHeightMap } from "./height-map-dialog"
 import { ReadAnchorsButton } from "./read-anchors-button"
+import { DeviceUsefulTools } from "./device-useful-tools"
 
 /**
  * The machine: connection, controls, camera, anchors, fixtures and the measured height map.
@@ -67,9 +68,8 @@ export function DevicePage() {
     ? profile.anchors
     : (projectProfile.anchors ?? undefined)
   const workspace = useWorkspaceStore()
-  const calibration = kitForSetup(
-    projectPlacement(workspace.state, fixtures.state)
-  ).anchorCalibration
+  const kit = kitForSetup(projectPlacement(workspace.state, fixtures.state))
+  const calibration = kit.anchorCalibration
   const { map } = useDeviceHeightMap()
   const probeAnchor = useProbeAnchor()
   const storedAnchorsFailure = useStoredAnchorsFailure()
@@ -149,6 +149,12 @@ export function DevicePage() {
     <div className="flex min-h-0 min-w-0 flex-1">
       <DevicePanel
         openPicker={() => openDialog({ kind: "device" })}
+        usefulTools={
+          <DeviceUsefulTools
+            calibrationName={calibration?.name ?? null}
+            probing={!!kit.probing}
+          />
+        }
         fixturePanel={
           <>
             <DeviceConfigurationCard />

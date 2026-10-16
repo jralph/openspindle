@@ -40,9 +40,11 @@ import { ResetMachineDialog } from "./reset-machine-dialog"
 export function DevicePanel({
   openPicker,
   fixturePanel,
+  usefulTools,
 }: {
   openPicker: () => void
   fixturePanel?: ReactNode
+  usefulTools?: ReactNode
 }) {
   const snapshot = useMachineSnapshot()
   const command = useMachineCommand()
@@ -281,6 +283,7 @@ export function DevicePanel({
             reason={reason}
             execute={execute}
           />
+          {usefulTools}
           <DeviceSimulatorCard device={device} />
         </div>
       </div>

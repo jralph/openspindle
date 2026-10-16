@@ -1,5 +1,7 @@
 # Device controls
 
+Device's right column includes **Useful tools** directly below **Spindle**. **Anchor 1 probe** opens the existing calibration guide; **3D probe routines** opens the illustrated outside/inside corner, boss/pocket centre, Z surface, height-map and outline picker; **Probe diameter** opens diameter calibration. **Inspection** provides direct shortcuts to stock inspection, feature spacing, surface inspection and repeatability. These reuse the existing docked guides, probe choices, setup checks and execution restrictions. Opening a shortcut sends no machine commands. General probing and inspection still prepare operations to review in Prepare and run from Job; Anchor 1 retains its explicit temporary runs.
+
 One module owns the machine: `MachineController` in `src/machine/core`, hosted in the machine process, an Electron utility process of its own ([architecture.md](architecture.md#the-machine)). The renderer and the native menu reach it only through a `MachineGateway` for their principal, each over its own port. Requests are the closed `MachineCommand` union (Zod-validated at the RPC boundary and again in the controller), plus Run, reads, writing the stored anchors or firmware configuration, a line typed in the [console](#protocol-trace-and-console) and Stop.
 
 ## Admission and availability
