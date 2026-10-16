@@ -9,6 +9,7 @@ import type { FirmwareModel } from "../firmware/firmware-model"
 import type { MachineOrigin } from "../plate/work-origin"
 import type { Result } from "../primitives"
 import type { MachineProbing } from "../probing/strategy"
+import type { BoundedDiameter } from "../probing/probe-calibration"
 import type { OriginParams } from "../probing/tasks/origin/params"
 import type { Fixture } from "./fixture"
 import type { MachineBed } from "./machine-bed"
@@ -99,6 +100,10 @@ export abstract class FixtureKit {
       diameter: number,
       maxTravel: readonly [number, number, number]
     ) => string
+  } | null = null
+  readonly diameterCalibration: {
+    readonly boundedNc: (plan: BoundedDiameter) => string
+    readonly measurementNc: () => string
   } | null = null
   /** Modeled recesses only: the operator must verify clearance on the installed bed. */
   readonly facingEntryPockets: readonly {

@@ -1,9 +1,10 @@
 import { isSimulator, readNcBlock, programParts } from "../../contract/index.ts"
 import type { FirmwareAdapter } from "../adapter.ts"
+import { boundedDiameterRequirement } from "./bounded-diameter.ts"
 import { boundedAnchorRequirement } from "./bounded-anchor.ts"
 
 const UNBOUNDED_PROBE =
-  "This probing routine has no verified input check and bounded contact sequence. For Anchor 1, recreate it with Auto calibrate Anchor 1 and complete the live signal check."
+  "This probing routine has no verified input check and bounded contact sequence. Recreate Anchor 1 or a diameter reading with its guide and complete the live signal check."
 const UNINSPECTED_EXECUTION =
   "Direct file and macro execution cannot verify the program's probing safety. Prepare the program and Run from Job so its contents can be checked."
 
@@ -59,7 +60,9 @@ export const assessMakeraPhysicalProgram: NonNullable<
   FirmwareAdapter["assessPhysicalProgram"]
 > = (source, program) => {
   try {
-    const probeCheck = boundedAnchorRequirement(source, program)
+    const probeCheck =
+      boundedDiameterRequirement(source, program) ??
+      boundedAnchorRequirement(source, program)
     if (probeCheck) return { issue: null, probeCheck }
   } catch (error) {
     return {

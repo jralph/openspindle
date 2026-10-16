@@ -35,6 +35,7 @@ import { placementHeight } from "@/domain/probing/placement"
 import { outlineTarget } from "@/domain/probing/tasks/outline/params"
 import { itemEdges, sameEdge } from "@/domain/plate/item-edges"
 import { kitForPlate } from "@/domain/fixtures/catalog"
+import { bossDiameterReading } from "@/domain/probing/probe-calibration"
 import { anchorCalibrationIssue } from "@/domain/anchors/calibration"
 import { methodFor } from "@/domain/probing/strategies"
 import {
@@ -200,6 +201,8 @@ function operationSummary(
       return `Traces ${names.join(", ")} with the probe's pointer.`
     }
     case "origin": {
+      if (probing.diameterCalibration)
+        return "Measures the known-width boss with six bounded contacts, using the checked manually positioned start. Sets work Z0 on its top and keeps work X0 at the manual center."
       const { placement } = probing.params
       const height = placementHeight(placement)
       const z = height !== undefined && (
@@ -433,9 +436,38 @@ function operationResults(
     )
     if (feature?.status === "complete") {
       const probed = probe3dFacts(source.params, ball, contacts, status)
-      description = probed.description
-      facts.push(...probed.facts)
-      found = probed.found
+      if (source.diameterCalibration) {
+        found = null
+        facts.push(...probed.facts.filter((fact) => fact.label !== "Boss"))
+        try {
+          const reading = bossDiameterReading(
+            contacts.contacts,
+            source.diameterCalibration.width
+          )
+          description =
+            "Completed bounded known-width calibration contacts. Work X0 remains at the manually positioned center; work Z0 is on the touched top. Collect this reading in the diameter guide."
+          facts.push(
+            {
+              label: "Known reference width",
+              value: `${mm(source.diameterCalibration.width)} mm`,
+            },
+            { label: "Contact span", value: `${mm(reading.span)} mm` },
+            {
+              label: "Effective X diameter",
+              value: `${mm(reading.diameter)} mm`,
+            }
+          )
+        } catch (error) {
+          description =
+            error instanceof Error
+              ? error.message
+              : "Calibration contacts could not be verified."
+        }
+      } else {
+        description = probed.description
+        facts.push(...probed.facts)
+        found = probed.found
+      }
       if (
         source.anchorCalibration &&
         anchorCalibrationIssue(

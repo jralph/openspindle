@@ -33,6 +33,7 @@ import { g32Grids } from "./wired-probe/grid"
 import { touchPoints } from "./wired-probe/touch-off"
 import { CLEARANCE_Z } from "./wired-probe/travel"
 import { Z1Bed } from "./z1-bed"
+import { boundedDiameterNc } from "./bounded-diameter"
 import { boundedAnchorNc, anchorMeasurementNc } from "./bounded-anchor"
 import { SETTER_CUTOUT_RADIUS, SETTER_TOP, SETTER_XY } from "./tool-setter"
 import {
@@ -78,6 +79,10 @@ export class MakeraZ1 extends FixtureKit {
       depth: 2,
     },
   } as const
+  override readonly diameterCalibration = {
+    boundedNc: boundedDiameterNc,
+    measurementNc: anchorMeasurementNc,
+  }
   override readonly facingEntryPockets = Z1_MDF_ENTRY_POCKETS
   /** A conservative square around the modeled setter opening, with 2 mm minimum clearance. */
   override readonly facingKeepOuts: readonly FacingKeepOut[] = [

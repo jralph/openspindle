@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { FacingParamsSchema } from "./facing"
+import { BoundedDiameterSchema } from "../probing/probe-calibration"
 import { AnchorCalibrationSchema } from "../anchors/calibration"
 import { utf8ByteLength } from "@/machine/contract"
 import { GridParamsSchema } from "../probing/tasks/grid/params"
@@ -164,6 +165,7 @@ export const ProbingSourceSchema = z.discriminatedUnion("task", [
   probingSource("outline", OutlineParamsSchema),
   probingSource("origin", OriginParamsSchema).extend({
     anchorCalibration: AnchorCalibrationSchema.optional(),
+    diameterCalibration: BoundedDiameterSchema.optional(),
   }),
 ])
 export type ProbingSource = z.infer<typeof ProbingSourceSchema>

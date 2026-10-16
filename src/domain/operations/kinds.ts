@@ -177,6 +177,39 @@ const probingKind: OperationKind<"probing"> = {
           fix: { kind: "assign-tool", toolNumber: table },
         })
       )
+    if (source.task === "origin" && source.diameterCalibration) {
+      const plan = source.diameterCalibration
+      const generate = kit.diameterCalibration?.boundedNc
+      if (
+        !generate ||
+        plate.operations.length !== 1 ||
+        operation.stopBefore ||
+        plan.deviceId !== plate.setup.deviceId ||
+        source.anchorCalibration ||
+        source.params.routine !== "boss-center" ||
+        source.strategy !== "boss-center" ||
+        source.params.axes !== "x" ||
+        source.params.placement.kind !== "probe-position" ||
+        source.params.distance.some((value) => value !== plan.distance) ||
+        source.params.depth !== plan.depth ||
+        probe.value.tool.diameter !== plan.diameter ||
+        probe.value.number !== plan.binding.tool ||
+        operation.tools.some((binding) => binding.local !== binding.plate)
+      )
+        return fail(
+          error(
+            "diameter-calibration-invalid",
+            "Run this bounded diameter reading alone with its original checked probe, device, reference and parameters. Recreate it with the guide after changes.",
+            { subject }
+          )
+        )
+      return ok({
+        nc: generate(plan),
+        standalone: true,
+        policy: { probing: "origin", anchoredProbing: false },
+        reviewLines: [],
+      })
+    }
     if (source.task === "origin" && source.anchorCalibration?.approach) {
       const approach = source.anchorCalibration.approach
       const generate = kit.anchorCalibration?.boundedNc

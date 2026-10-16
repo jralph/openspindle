@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { ProbeCheckBindingSchema } from "@/machine/contract"
 import type { XYZ } from "../geometry/frame"
 import { toMicrometre } from "../primitives"
 
@@ -130,3 +131,55 @@ export function diameterAverage(readings: readonly DiameterReading[]) {
     )
   return { average, range, diameter: toMicrometre(average) }
 }
+
+/** Frozen checked start and operator-selected search travel, never a probe overtravel rating. */
+export const BoundedDiameterSchema = z
+  .strictObject({
+    binding: ProbeCheckBindingSchema,
+    deviceId: z.string().min(1).max(500),
+    gap: z.number().finite().min(0.1).max(5),
+    width: z.number().finite().min(2).max(100),
+    distance: z.number().finite().min(2).max(100),
+    depth: z.number().finite().min(0.5).max(10),
+    diameter: z.number().finite().min(0.5).max(3.2),
+    maxTravel: z.tuple([
+      z.number().finite().min(0.4).max(10),
+      z.number().finite().min(0.4).max(10),
+      z.number().finite().min(0.4).max(10),
+    ]),
+  })
+  .superRefine((value, ctx) => {
+    if (value.distance <= value.width / 2 + value.diameter / 2 + 1)
+      ctx.addIssue({
+        code: "custom",
+        path: ["distance"],
+        message:
+          "Offset must exceed half the reference width plus ball radius and 1 mm clearance.",
+      })
+    if (value.depth < value.diameter + 0.25)
+      ctx.addIssue({
+        code: "custom",
+        path: ["depth"],
+        message:
+          "Side depth must exceed the ball diameter by at least 0.25 mm.",
+      })
+    if (value.maxTravel[2] <= value.gap)
+      ctx.addIssue({
+        code: "custom",
+        path: ["maxTravel", 2],
+        message: "Downward search must exceed the estimated top gap.",
+      })
+    const sideGap = value.distance - value.width / 2 - value.diameter / 2
+    if (
+      value.maxTravel
+        .slice(0, 2)
+        .some((distance) => distance <= sideGap || distance >= value.distance)
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["maxTravel"],
+        message:
+          "Each side search must exceed its estimated gap and remain shorter than the center-to-side offset.",
+      })
+  })
+export type BoundedDiameter = z.infer<typeof BoundedDiameterSchema>

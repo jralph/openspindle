@@ -2,8 +2,10 @@ import { useId, useState } from "react"
 import { createAtom, useSelector } from "@tanstack/react-store"
 import { useNavigate } from "@tanstack/react-router"
 import { useMutation } from "@tanstack/react-query"
+import { z } from "zod"
 import { toast } from "sonner"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { ReasonButton } from "@/components/workspace/reason-button"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -25,17 +27,18 @@ import { kitForSetup } from "@/domain/fixtures/catalog"
 import { createPlate, createPlateSetup } from "@/domain/plate/plate"
 import { newProbingOperation, strategyById } from "@/domain/probing/strategies"
 import {
+  BoundedDiameterSchema,
   diameterAverage,
   parseDiameterLog,
   ProbeCalibrationSettingsSchema,
 } from "@/domain/probing/probe-calibration"
 import type { DiameterReading } from "@/domain/probing/probe-calibration"
-import { ToolSchema } from "@/domain/tools/tool"
+import { ToolSchema, probeProfile } from "@/domain/tools/tool"
 import type { Tool } from "@/domain/tools/tool"
 import { toMicrometre } from "@/domain/primitives"
 import { machineId } from "@/machine/contract"
 import { useHost } from "@/platform/host-context"
-import { useMachineSnapshot } from "@/platform/machine"
+import { useMachineSnapshot, useReadSwitches } from "@/platform/machine"
 import { useJobSession } from "@/features/job/job-session"
 import { deriveJobView } from "@/features/job/job-view"
 import { inspectionReport } from "@/features/job/inspection-report"
@@ -44,7 +47,6 @@ import { ParameterField, probingField } from "@/features/probing/probing-fields"
 import { useProbingForm } from "@/features/probing/probing-form"
 import { AppDialog } from "@/features/shell/app-dialog"
 import { CalibrationIllustration } from "./calibration-illustration"
-import { calibrationPreparationIssue } from "./calibration-safety"
 
 type ReadingSource = {
   kind: "manual" | "physical" | "simulator"
@@ -55,7 +57,16 @@ type ReadingSource = {
 type Draft = {
   step: number
   toolId: string
-  settings: { width: number; distance: number; depth: number; diameter: number }
+  settings: {
+    width: number
+    distance: number
+    depth: number
+    diameter: number
+    gap: number
+    maxLeft: number
+    maxRight: number
+    maxDown: number
+  }
   logs: string[]
   sources: (ReadingSource | null)[]
   originalTool: string | null
@@ -67,12 +78,28 @@ type Draft = {
     deviceId: string
     toolId: string
     diameter: number
+    plan: string
   } | null
 }
+const SettingsSchema = ProbeCalibrationSettingsSchema.safeExtend({
+  gap: z.number().finite().min(0.1).max(5),
+  maxLeft: z.number().finite().min(0.4).max(10),
+  maxRight: z.number().finite().min(0.4).max(10),
+  maxDown: z.number().finite().min(0.4).max(10),
+})
 const empty = (): Draft => ({
   step: 0,
   toolId: "",
-  settings: { width: 15, distance: 10, depth: 2.5, diameter: 2 },
+  settings: {
+    width: 15,
+    distance: 10,
+    depth: 2.5,
+    diameter: 2,
+    gap: 5,
+    maxLeft: 2.5,
+    maxRight: 2.5,
+    maxDown: 6,
+  },
   logs: ["", "", ""],
   sources: [null, null, null],
   originalTool: null,
@@ -128,9 +155,7 @@ export function ProbeDiameterCalibrationDialog({
   const fixtures = useFixtureLibraryStore()
   const library = useWorkspace((state) => state.tools)
   const machine = useMachineSnapshot()
-  const preparationIssue = calibrationPreparationIssue(
-    machine.connection.device
-  )
+  const readSwitches = useReadSwitches()
   const session = useJobSession()
   const host = useHost()
   const navigate = useNavigate()
@@ -161,7 +186,7 @@ export function ProbeDiameterCalibrationDialog({
   }
   const form = useProbingForm(
     draft.settings,
-    ProbeCalibrationSettingsSchema,
+    SettingsSchema,
     (settings) => update({ settings }),
     setValid
   )
@@ -178,10 +203,72 @@ export function ProbeDiameterCalibrationDialog({
     sources: draft.sources,
     deviceId: placement.deviceId,
     connectionId: machine.connection.id,
+    proof: machine.probeCheck,
   })
   const confirmed = confirmedSetup === setupKey
   const setConfirmed = (value: boolean) =>
     setConfirmedSetup(value ? setupKey : null)
+  const check = machine.probeCheck
+  const binding =
+    check?.phase === "verified" && check.connectionId === machine.connection.id
+      ? check.binding
+      : null
+  const profile = tool && probeProfile(tool)
+  const probeNumber = profile && kit.probing?.slot(profile)
+  const activeProbe =
+    probeNumber !== null &&
+    probeNumber !== undefined &&
+    machine.telemetry?.tool === probeNumber &&
+    machine.telemetry.toolOffset !== null
+  const device = machine.connection.device
+  let preparationIssue: string | null = null
+  if (!kit.diameterCalibration)
+    preparationIssue =
+      "This machine has no supported bounded diameter calibration."
+  else if (
+    !device ||
+    machine.connection.status !== "connected" ||
+    machineId(device) !== placement.deviceId
+  )
+    preparationIssue =
+      "Connect the project's device before preparing a reading."
+  else if (machine.connection.restartNeeded)
+    preparationIssue = "Reset the device to apply pending settings first."
+  else if (!machine.availability.run.allowed)
+    preparationIssue =
+      machine.availability.run.reason ??
+      "The device is not ready for a new job."
+  const plan =
+    binding && device
+      ? BoundedDiameterSchema.safeParse({
+          binding,
+          deviceId: machineId(device),
+          gap: draft.settings.gap,
+          width: draft.settings.width,
+          distance: draft.settings.distance,
+          depth: draft.settings.depth,
+          diameter: nextDiameter,
+          maxTravel: [
+            draft.settings.maxLeft,
+            draft.settings.maxRight,
+            draft.settings.maxDown,
+          ],
+        })
+      : null
+  let runIssue = preparationIssue
+  if (!runIssue && !binding)
+    runIssue =
+      "Complete the live released → triggered → released signal check after manually positioning."
+  if (!runIssue && binding?.tool !== probeNumber)
+    runIssue = "The checked active probe must match this library probe."
+  if (!runIssue && (!plan || !plan.success))
+    runIssue =
+      plan?.error.issues[0]?.message ??
+      "Check the reference and bounded travel settings."
+  let readLabel = "Read released probe / start again"
+  if (check?.phase === "released") readLabel = "Read while touching probe"
+  else if (check?.phase === "triggered")
+    readLabel = "Read after releasing probe"
   const report = inspectionReport(deriveJobView(session, machine))
   const selectTool = (toolId: string) => {
     update({
@@ -204,17 +291,17 @@ export function ProbeDiameterCalibrationDialog({
   }
   const prepare = () =>
     attempt(() => {
-      if (preparationIssue) throw new Error(preparationIssue)
+      if (runIssue) throw new Error(runIssue)
+      if (!plan?.success) throw new Error("Check the bounded reading settings.")
       if (!tool || !kit.probing || !valid || nextIndex < 0 || !confirmed)
         throw new Error(
-          "Choose a probe, check the settings and confirm the simulator setup."
+          "Choose a probe, check the settings and confirm the physical setup."
         )
       const checked = ProbeCalibrationSettingsSchema.safeParse({
         ...draft.settings,
         diameter: nextDiameter,
       })
       if (!checked.success) throw new Error(checked.error.issues[0].message)
-      const device = machine.connection.device
       if (
         !device ||
         machine.connection.status !== "connected" ||
@@ -277,6 +364,7 @@ export function ProbeDiameterCalibrationDialog({
             depth: draft.settings.depth,
             placement: { kind: "probe-position" as const },
           },
+          diameterCalibration: structuredClone(plan.data),
         },
       }
       const others = workspace.state.tools.filter(
@@ -307,12 +395,58 @@ export function ProbeDiameterCalibrationDialog({
           deviceId: machineId(device),
           toolId: trialId,
           diameter: nextDiameter,
+          plan: JSON.stringify(plan.data),
         },
       })
       onClose()
       void navigate({ to: "/job" })
       toast.success(
         `Reading ${nextIndex + 1} prepared. On Job, dismiss any previous completed result, then Run this reading and reopen the guide before Dismiss.`
+      )
+    })
+  const prepareMeasurement = () =>
+    attempt(() => {
+      if (preparationIssue) throw new Error(preparationIssue)
+      if (!tool || !kit.probing || !kit.diameterCalibration)
+        throw new Error("Choose the fitted probe.")
+      const plate = {
+        ...createPlate(
+          createPlateSetup({
+            stock: null,
+            stockSource: "assigned",
+            ...placement,
+          })
+        ),
+        name: "Probe diameter — tool-setter detection",
+      }
+      const added = newProbingOperation(plate, tool, strategy, kit.probing)
+      const operation = {
+        ...added.operation,
+        name: plate.name,
+        source: {
+          kind: "file" as const,
+          nc: kit.diameterCalibration.measurementNc(),
+          park: false,
+          phase: "setup" as const,
+        },
+      }
+      const result = workspace.dispatch({
+        type: "batch",
+        commands: [
+          { type: "plates.add", plates: [plate], select: true },
+          {
+            type: "operation.add",
+            plateId: plate.id,
+            operation,
+            preferredTools: added.preferredTools,
+          },
+        ],
+      })
+      if (!result.ok) throw new Error(result.error)
+      onClose()
+      void navigate({ to: "/job" })
+      toast.success(
+        "Tool-setter detection prepared. Run it on Job, dismiss its completed result, then position manually above the reference and reopen this guide."
       )
     })
   const collect = () =>
@@ -336,6 +470,17 @@ export function ProbeDiameterCalibrationDialog({
       if (draft.sources.some((source) => source?.jobId === report.jobId))
         throw new Error(
           "This run was already collected. Run a separate reading."
+        )
+      const frozenSource = session.plate.operations.find(
+        (item) => item.id === pending.operationId
+      )?.source
+      if (
+        frozenSource?.kind !== "probing" ||
+        frozenSource.task !== "origin" ||
+        JSON.stringify(frozenSource.diameterCalibration) !== pending.plan
+      )
+        throw new Error(
+          "The completed reading's checked start, reference or search plan differs from this guide's prepared reading."
         )
       const feature = report.features.find(
         (item) => item.operationId === pending.operationId
@@ -455,7 +600,7 @@ export function ProbeDiameterCalibrationDialog({
       title="3D probe diameter calibration"
       width="wide"
       onClose={onClose}
-      description="Simulator practice and pasted-reading calculator. Physical probing is disabled following a probe collision. Preparation moves nothing."
+      description="Known-width calibration with a measured probe, manually positioned start, live signal check and bounded contacts. Preparation moves nothing."
       footer={
         <div className="flex w-full flex-wrap justify-between gap-2">
           <Button
@@ -544,11 +689,21 @@ export function ProbeDiameterCalibrationDialog({
               />
             </Field>
             <p>
-              For simulator practice, position above the boss center, clear of
-              its top. Normal tool-length calibration runs before probing. The
-              routine touches the top, then makes two contacts on each X side
-              and replaces work X/Z zero.
+              Fit the selected undamaged 3D probe and connect its signal cable.
+              If newly fitted or remounted, prepare tool-setter detection and
+              Run it on Job. Otherwise reuse the same active probe's existing
+              measurement. A conductive rod needs its own library dimensions and
+              conductive contact surfaces connected to the table. No tool change
+              or remeasurement occurs after manual positioning.
             </p>
+            <ReasonButton
+              label="Prepare tool-setter detection"
+              reason={preparationIssue}
+              disabled={!tool || !!draft.pending}
+              onClick={prepareMeasurement}
+            >
+              Prepare tool-setter detection
+            </ReasonButton>
             <ParameterField
               id={`${id}-distance`}
               parameter={{
@@ -581,29 +736,97 @@ export function ProbeDiameterCalibrationDialog({
                 label: "Initial probe diameter",
                 unit: "mm",
                 min: 0.5,
-                max: 10,
+                max: 3.2,
                 step: 0.001,
                 default: 2,
               }}
               field={probingField(form, "diameter")}
               disabled={hasReadings || !!draft.pending}
             />
+            {(
+              [
+                ["gap", "Estimated gap above reference top", 5],
+                ["maxLeft", "Maximum inward search from left · X+", 2.5],
+                ["maxRight", "Maximum inward search from right · X−", 2.5],
+                ["maxDown", "Maximum downward search · Z−", 6],
+              ] as const
+            ).map(([name, label, defaultValue]) => (
+              <ParameterField
+                key={name}
+                id={`${id}-${name}`}
+                parameter={{
+                  label,
+                  unit: "mm",
+                  min: name === "gap" ? 0.1 : 0.4,
+                  max: name === "gap" ? 5 : 10,
+                  step: 0.1,
+                  default: defaultValue,
+                }}
+                field={probingField(form, name)}
+                disabled={!!draft.pending}
+              />
+            ))}
             <p>
+              After tool detection, dismiss its completed result. Manually
+              position the tip over the solid center of the boss, approximately
+              5 mm above its top, clear of holes. Align the two measured faces
+              perpendicular to machine X. The side depth must put the complete
+              ball below the top, and remain above the bed and all fasteners.
               The X offset must exceed half the width plus the ball radius and 1
               mm. For a 15 mm reference and 2 mm ball, 10 mm leaves clearance.
               Check travel around the whole reference, screws and clamps.
+              Maximum searches are total travel, not a guaranteed safe
+              deflection allowance. Choose limits for the actual gaps; missing
+              contacts halt without retrying. Preview height is schematic, not a
+              measured reference height.
             </p>
           </>
         )}
         {draft.step === 2 && (
           <>
             <p>
-              For each reading: return the probe over the same boss center,
-              confirm the setup, prepare and Run the job, then reopen this guide
-              and collect the result before Dismiss. Each next job uses the
-              preceding reading's effective diameter in a separate calibration
-              probe entry; the original probe stays unchanged until Save.
+              For each reading: return the same measured probe over the solid
+              boss center, set the estimated top gap and search limits on the
+              preceding step, then verify the live signal below. Do not move or
+              remount it after checking. Confirm the setup, prepare and Run the
+              job, then reopen this guide and collect the result before Dismiss.
+              Each next job uses the preceding reading's effective diameter in a
+              separate calibration probe entry; the original probe stays
+              unchanged until Save.
             </p>
+            <p>
+              With the machine stationary and spindle stopped: read released,
+              gently trigger and hold the probe while reading, then release and
+              read again. The actual input must change. For a conductive rod,
+              use a conductive contact connected to the table without moving the
+              axes. Tool-setter success does not prove this input works.
+            </p>
+            <FieldDescription>
+              Live signal: {check?.phase ?? "not started"}. Proof expires in two
+              minutes, is used for one Run and is invalidated by movement, tool
+              changes or reconnecting.
+            </FieldDescription>
+            <ReasonButton
+              label={readLabel}
+              reason={
+                preparationIssue ??
+                (!activeProbe
+                  ? "Use the same fitted probe's tool-setter measurement, then manually position before checking its signal."
+                  : null) ??
+                (!machine.availability.readSwitches.allowed
+                  ? machine.availability.readSwitches.reason
+                  : null)
+              }
+              disabled={readSwitches.isPending || !!draft.pending}
+              onClick={() =>
+                readSwitches.mutate(undefined, {
+                  onError: (problem) => toast.error(problem.message),
+                })
+              }
+            >
+              {readLabel}
+            </ReasonButton>
+            {runIssue && <FieldDescription>{runIssue}</FieldDescription>}
             <Field orientation="horizontal">
               <Checkbox
                 id={`${id}-setup`}
@@ -611,15 +834,16 @@ export function ProbeDiameterCalibrationDialog({
                 onCheckedChange={(value) => setConfirmed(value === true)}
               />
               <FieldLabel htmlFor={`${id}-setup`}>
-                Simulator practice: same probe and reference, centered above the
-                boss; modeled travel checked.
+                Same measured probe fitted and connected; tip centered above the
+                solid reference; gap, complete travel, search limits and
+                conductive contact path checked.
               </FieldLabel>
             </Field>
             <div className="flex flex-wrap gap-2">
               <Button
                 disabled={
                   !tool ||
-                  !!preparationIssue ||
+                  !!runIssue ||
                   !valid ||
                   nextIndex < 0 ||
                   !confirmed ||
