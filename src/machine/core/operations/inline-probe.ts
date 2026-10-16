@@ -7,7 +7,7 @@ import type {
 } from "../../contract/index.ts"
 import { FAILURE_LINES, excerpt } from "../../firmware/adapter.ts"
 import { MachineError } from "../errors.ts"
-import { freshStatus } from "./context.ts"
+import { freshStatus, PREFLIGHT_MS } from "./context.ts"
 import type { OperationContext } from "./context.ts"
 import type { JobRunnerHooks } from "./job-runner.ts"
 
@@ -20,9 +20,8 @@ const xyz = (status: Telemetry) => {
     )
   return [status.machine.x, status.machine.y, status.machine.z] as const
 }
-function requireStationaryProbe(context: OperationContext, status: Telemetry) {
+function requireMeasuredProbe(context: OperationContext, status: Telemetry) {
   if (
-    status.state !== "Idle" ||
     status.job !== null ||
     status.units !== "mm" ||
     !isHeightCompensationOff(status) ||
@@ -38,6 +37,51 @@ function requireStationaryProbe(context: OperationContext, status: Telemetry) {
   xyz(status)
 }
 
+function requireStationaryProbe(context: OperationContext, status: Telemetry) {
+  requireMeasuredProbe(context, status)
+  if (status.state !== "Idle")
+    throw new MachineError(
+      "unverified",
+      `The probe is not confirmed stationary (state ${status.state}). No following step was sent.`
+    )
+}
+
+/** After an acknowledged drain, the bridge can briefly retain Run. Only status is polled. */
+async function stationaryProbeStatus(
+  context: OperationContext,
+  timeoutMessage: string
+): Promise<Telemetry> {
+  const { session, signal } = context
+  const after = session.store.sequence
+  const releaseBoost = session.boostPolling()
+  try {
+    const status = session.store.waitFor((value) => value.state === "Idle", {
+      after,
+      timeoutMs: PREFLIGHT_MS,
+      timeoutMessage,
+      signal,
+      failWhen: (value) => {
+        try {
+          requireMeasuredProbe(context, value)
+          if (value.state !== "Idle" && value.state !== "Run")
+            throw new MachineError(
+              "unverified",
+              `The machine entered ${value.state} while waiting for the probe to stop. No following step was sent.`
+            )
+          return null
+        } catch (error) {
+          if (error instanceof MachineError) return error
+          throw error
+        }
+      },
+    })
+    session.requestStatus(true)
+    return await status
+  } finally {
+    releaseBoost()
+  }
+}
+
 /** A fresh hardware input read at a stationary pose, before every search and after release. */
 async function probeInput(
   context: OperationContext
@@ -49,9 +93,9 @@ async function probeInput(
       "refused",
       "No actual probe-input query is available."
     )
-  const before = await freshStatus(
+  const before = await stationaryProbeStatus(
     context,
-    "No fresh status before the probe-input check."
+    "The machine did not report Idle within 3 seconds before the probe-input check. No following step was sent."
   )
   requireStationaryProbe(context, before)
   let triggered: boolean | null = null
@@ -140,9 +184,9 @@ async function verifyContact(
   before: Telemetry,
   contact: readonly number[]
 ) {
-  const after = await freshStatus(
+  const after = await stationaryProbeStatus(
     context,
-    "No stopped machine coordinates after the probe contact."
+    "The machine did not report Idle within 3 seconds after the probe contact. No following step was sent."
   )
   requireStationaryProbe(context, after)
   if (after.toolOffset !== before.toolOffset)
@@ -323,9 +367,9 @@ export async function runInlineProbe(
         "unverified",
         "The routine did not produce exactly six successful contacts."
       )
-    const status = await freshStatus(
+    const status = await stationaryProbeStatus(
       context,
-      "No final idle status after bounded probing."
+      "The machine did not report Idle within 3 seconds after bounded probing."
     )
     if (
       status.state !== "Idle" ||
