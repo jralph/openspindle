@@ -34,6 +34,7 @@ export function boundedPointZRequirement(
   const { target, feed, settings } = plan
   if (
     ![0, 9999].includes(binding.tool) ||
+    settings.travel > 100 ||
     feed.some((value, axis) => value > [4000, 4000, 2000][axis]) ||
     target.some(
       (value, axis) =>

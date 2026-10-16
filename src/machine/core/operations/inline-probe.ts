@@ -46,35 +46,45 @@ function requireStationaryProbe(context: OperationContext, status: Telemetry) {
     )
 }
 
-/** After an acknowledged drain, the bridge can briefly retain Run. Only status is polled. */
+/** After a drain the bridge can retain Run or an older Idle pose. Only status is polled. */
 async function stationaryProbeStatus(
   context: OperationContext,
-  timeoutMessage: string
+  timeoutMessage: string,
+  matches: (status: Telemetry) => boolean = () => true,
+  expectedOffset: number | null = null
 ): Promise<Telemetry> {
   const { session, signal } = context
   const after = session.store.sequence
   const releaseBoost = session.boostPolling()
   try {
-    const status = session.store.waitFor((value) => value.state === "Idle", {
-      after,
-      timeoutMs: PREFLIGHT_MS,
-      timeoutMessage,
-      signal,
-      failWhen: (value) => {
-        try {
-          requireMeasuredProbe(context, value)
-          if (value.state !== "Idle" && value.state !== "Run")
-            throw new MachineError(
-              "unverified",
-              `The machine entered ${value.state} while waiting for the probe to stop. No following step was sent.`
-            )
-          return null
-        } catch (error) {
-          if (error instanceof MachineError) return error
-          throw error
-        }
-      },
-    })
+    const status = session.store.waitFor(
+      (value) => value.state === "Idle" && matches(value),
+      {
+        after,
+        timeoutMs: PREFLIGHT_MS,
+        timeoutMessage,
+        signal,
+        failWhen: (value) => {
+          try {
+            requireMeasuredProbe(context, value)
+            if (expectedOffset !== null && value.toolOffset !== expectedOffset)
+              throw new MachineError(
+                "unverified",
+                "Tool offset changed during a probe search."
+              )
+            if (value.state !== "Idle" && value.state !== "Run")
+              throw new MachineError(
+                "unverified",
+                `The machine entered ${value.state} while waiting for the probe to stop. No following step was sent.`
+              )
+            return null
+          } catch (error) {
+            if (error instanceof MachineError) return error
+            throw error
+          }
+        },
+      }
+    )
     session.requestStatus(true)
     return await status
   } finally {
@@ -322,18 +332,7 @@ async function verifyContact(
   contact: readonly number[],
   requireEndpoint = false
 ) {
-  const after = await stationaryProbeStatus(
-    context,
-    "The machine did not report Idle within 3 seconds after the probe contact. No following step was sent."
-  )
-  requireStationaryProbe(context, after)
-  if (after.toolOffset !== before.toolOffset)
-    throw new MachineError(
-      "unverified",
-      "Tool offset changed during a probe search."
-    )
-  const start = xyz(before),
-    end = xyz(after)
+  const start = xyz(before)
   const movement = block.words.filter((word) =>
     ["X", "Y", "Z"].includes(word.letter)
   )
@@ -353,14 +352,39 @@ async function verifyContact(
       Math.abs(travel - Math.abs(distance)) > POSITION_TOLERANCE) ||
     contact.some(
       (value, index) =>
-        Math.abs(value - end[index]) > POSITION_TOLERANCE ||
-        (index !== axis && Math.abs(value - start[index]) > POSITION_TOLERANCE)
+        index !== axis && Math.abs(value - start[index]) > POSITION_TOLERANCE
     )
   )
     throw new MachineError(
       "unverified",
-      "Probe contact does not match this search's axis, travel bounds and stopped machine coordinates. No following step was sent."
+      `Probe report does not match this search's axis and travel bounds. Start XYZ ${start.join(", ")}; command ${block.code}; reported XYZ ${contact.join(", ")}. No following step was sent.`
     )
+  // The bridge can report an older Idle pose after the synchronous PRB reply
+  // and acknowledged drain, especially for a short transit. Poll status only:
+  // do not accept that pose, widen the tolerance or repeat the motion.
+  const observed: { position: readonly number[] | null } = { position: null }
+  try {
+    await stationaryProbeStatus(
+      context,
+      "Stopped coordinates did not match the probe report within 3 seconds.",
+      (status) => {
+        const position = xyz(status)
+        observed.position = position
+        return contact.every(
+          (value, index) =>
+            Math.abs(value - position[index]) <= POSITION_TOLERANCE
+        )
+      },
+      before.toolOffset
+    )
+  } catch (error) {
+    if (!(error instanceof MachineError) || error.code !== "timeout")
+      throw error
+    throw new MachineError(
+      "unverified",
+      `Stopped coordinates did not match the probe report within 3 seconds (tolerance ${POSITION_TOLERANCE} mm). Start XYZ ${start.join(", ")}; command ${block.code}; reported XYZ ${contact.join(", ")}; last stopped XYZ ${observed.position?.join(", ") ?? "unavailable"}. No following step was sent.`
+    )
+  }
 }
 
 /** Console replies stay observable: played-file G38 replies go to the firmware's null stream. */

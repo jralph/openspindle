@@ -61,7 +61,7 @@ type Draft = {
   toolId: string
   signalId: string
   signalTool: string
-  settings: ZProbeSettings
+  settings: ZProbeSettings | null
   job?: ZProbeJob
   point?: PointIntent
   risk: boolean
@@ -71,7 +71,7 @@ const draftAtom = createAtom<Draft>({
   toolId: "",
   signalId: "",
   signalTool: "",
-  settings: { travel: 105, clearance: 5 },
+  settings: null,
   risk: false,
 })
 const update = (patch: Partial<Draft>) =>
@@ -114,6 +114,8 @@ export function ZProbeDialog({
   const fixtures = useFixtureLibrary((value) => value)
   const placement = draft.point?.setup ?? projectPlacement(workspace, fixtures)
   const kit = kitForSetup(placement)
+  const maxSearch = kit.workArea[2]
+  const settings = draft.settings ?? { travel: maxSearch, clearance: 5 }
   const machine = useMachineSnapshot()
   const configuration = useCachedConfiguration(machine.connection.id)
   const host = useMachineHost()
@@ -121,9 +123,9 @@ export function ZProbeDialog({
   const cutting = useRunJob()
   const [valid, setValid] = useState(true)
   const form = useProbingForm(
-    draft.settings,
+    settings,
     ZProbeSettingsSchema,
-    (settings) => update({ settings, risk: false }),
+    (nextSettings) => update({ settings: nextSettings, risk: false }),
     setValid
   )
   const tools = workspace.tools.filter(isProbe).flatMap((tool) => {
@@ -148,7 +150,7 @@ export function ZProbeDialog({
     tool?.id === draft.signalTool
   const stage: "setter" | "contacts" = draft.step === 0 ? "setter" : "contacts"
   const pointPlan =
-    draft.point && pointZProbePlan(draft.point, configuration, draft.settings)
+    draft.point && pointZProbePlan(draft.point, configuration, settings)
   const input =
     tool &&
     number !== undefined &&
@@ -161,7 +163,7 @@ export function ZProbeDialog({
           }),
           tool,
           number,
-          settings: draft.settings,
+          settings,
           binding,
           stage,
           pointPlan: stage === "contacts" ? pointPlan : undefined,
@@ -270,7 +272,7 @@ export function ZProbeDialog({
         t.spindleRpm !== 0 ||
         t.spindleOn === true ||
         !isHeightCompensationOff(t) ||
-        Math.abs(t.work.z - draft.settings.clearance) > 0.01
+        Math.abs(t.work.z - settings.clearance) > 0.01
       )
         throw new Error(
           "The completed contacts, measured probe and final Z clearance could not be verified. Nothing else was started."
@@ -444,7 +446,13 @@ export function ZProbeDialog({
             )}
             {(
               [
-                ["travel", "Maximum downward search", 0.4, 105, 105],
+                [
+                  "travel",
+                  "Maximum downward search",
+                  0.4,
+                  maxSearch,
+                  maxSearch,
+                ],
                 ["clearance", "Lift above measured surface", 0.5, 10, 5],
               ] as const
             ).map(([name, label, min, max, initial]) => (
@@ -465,7 +473,8 @@ export function ZProbeDialog({
               />
             ))}
             <FieldDescription>
-              The downward search stops on contact or at the chosen maximum,
+              The search limit defaults to the machine's full Z work height. The
+              downward search stops on contact or at the chosen maximum,
               shortened to stay above the machine's reported lower Z limit. No
               contact means failure without setting Z0. From a high start, the
               slow search can take several minutes. No tool change occurs.
@@ -506,6 +515,9 @@ export function ZProbeDialog({
               reason={
                 reason ??
                 (!valid ? "Correct the search settings." : null) ??
+                (settings.travel > maxSearch
+                  ? "Maximum search cannot exceed the machine's Z work height."
+                  : null) ??
                 (draft.point && !draft.risk
                   ? "Confirm the automatic route and setup first."
                   : null) ??

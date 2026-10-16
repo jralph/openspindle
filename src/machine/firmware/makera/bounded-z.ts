@@ -27,6 +27,8 @@ export function boundedZRequirement(source: string, program: PreparedProgram) {
   if (![0, 9999].includes(binding.tool))
     throw new Error("Bounded Z probing requires a supported measured probe.")
   const plan = ZProbeSettingsSchema.parse(JSON.parse(plans[0][1]))
+  if (plan.travel > 100)
+    throw new Error("The Z search cannot exceed the Z1's 100 mm work height.")
   const expected = [
     "M5",
     "G21 G90 G17 G94 G54",
