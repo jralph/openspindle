@@ -25,7 +25,7 @@ function requireMeasuredProbe(context: OperationContext, status: Telemetry) {
     status.job !== null ||
     status.units !== "mm" ||
     !isHeightCompensationOff(status) ||
-    status.tool !== context.adapter.probeCheckTool ||
+    status.tool !== context.probeTool ||
     status.toolOffset === null ||
     status.spindleRpm !== 0 ||
     status.spindleOn === true
@@ -293,8 +293,24 @@ export async function runInlineProbe(
       "refused",
       "This host cannot execute a verified bounded probe routine."
     )
+  const authorize = context.authorizeProbeCheck
+  if (!context.adapter.probeCheckTools?.includes(program.probeCheck.tool))
+    throw new MachineError("refused", "This measured probe is not supported.")
+  context = { ...context, probeTool: program.probeCheck.tool }
+  const expectedContacts = program.text
+    .split("\n")
+    .filter((line) =>
+      readNcBlock(line).words.some(
+        (word) => word.letter === "G" && word.value === 38.2
+      )
+    ).length
+  if (expectedContacts !== 2 && expectedContacts !== 6)
+    throw new MachineError(
+      "refused",
+      "Invalid number of protected probe contacts."
+    )
   const { session, adapter, clock } = context
-  context.authorizeProbeCheck(program.probeCheck)
+  authorize(program.probeCheck)
   const started = clock.now()
   const contacts: ContactsMeasurement = {
     kind: "contacts",
@@ -341,7 +357,7 @@ export async function runInlineProbe(
         if (!releasing) {
           contacts.contacts.push(contact)
           contacts.line ??= index + 1
-          if (contacts.contacts.length > 6)
+          if (contacts.contacts.length > expectedContacts)
             throw new MachineError(
               "rejected",
               "Too many contacts; bounded probing stopped."
@@ -362,10 +378,10 @@ export async function runInlineProbe(
         },
       })
     }
-    if (contacts.contacts.length !== 6)
+    if (contacts.contacts.length !== expectedContacts)
       throw new MachineError(
         "unverified",
-        "The routine did not produce exactly six successful contacts."
+        `The routine did not produce exactly ${expectedContacts} successful contacts.`
       )
     const status = await stationaryProbeStatus(
       context,

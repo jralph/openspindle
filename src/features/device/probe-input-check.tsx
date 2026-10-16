@@ -44,7 +44,8 @@ function signalWaitingReason(
   if (status.state !== "Idle")
     return `The machine reports ${status.state}; the signal check starts when it is Idle.`
   if (status.job !== null) return "Wait for the machine's program to finish."
-  if (toolNumber === null) return "Select a supported XYZ probe in this guide."
+  if (toolNumber === null)
+    return "Select a supported Z or XYZ probe in this guide."
   if (status.tool !== toolNumber)
     return `The active tool is ${status.tool === null ? "unknown" : `T${status.tool}`}; select and measure the fitted probe as T${toolNumber}.`
   if (status.toolOffset === null)

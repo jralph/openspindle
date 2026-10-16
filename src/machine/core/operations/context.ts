@@ -29,6 +29,8 @@ export type OperationContext = {
   readonly resumeProgram?: () => PreparedProgram | null
   /** Consumes this connection's one-use verified released/triggered/released input proof. */
   readonly authorizeProbeCheck?: (binding: ProbeCheckBinding) => void
+  /** Retained tool of a protected contact sequence, fixed at authorization. */
+  readonly probeTool?: number
   /** An owning manual controller can request a halt before unverified motion is isolated. */
   readonly onUnverifiedMotion?: () => void
   /** Admission against fresh telemetry, ignoring the operation's own activity. */

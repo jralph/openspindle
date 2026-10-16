@@ -1141,14 +1141,17 @@ export class MachineController {
         checkConnection()
         if (report.probe === null) this.probeSignal.invalidate()
         else if (this.probeRead?.changed) this.probeSignal.moved()
-        else if (this.adapter.probeCheckTool !== undefined)
+        else if (
+          before.tool !== null &&
+          this.adapter.probeCheckTools?.includes(before.tool)
+        )
           this.probeSignal.read(
             report.probe,
             before,
             after,
             this.connectionId(context.session),
             this.ports.clock.now(),
-            this.adapter.probeCheckTool
+            before.tool
           )
         this.publish()
         return report
@@ -1312,12 +1315,13 @@ export class MachineController {
     if (session !== this.session) return
     if (
       this.probeRead &&
-      this.adapter.probeCheckTool !== undefined &&
+      this.probeRead.before.tool !== null &&
+      !!this.adapter.probeCheckTools?.includes(this.probeRead.before.tool) &&
       !this.probeSignal.stationaryRead(
         this.probeRead.before,
         telemetry,
         this.ports.clock.now(),
-        this.adapter.probeCheckTool
+        this.probeRead.before.tool
       )
     )
       this.probeRead.changed = true

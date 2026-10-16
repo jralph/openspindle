@@ -49,6 +49,7 @@ import { GridSettings } from "./grid-settings"
 import { ParameterField, probingField } from "./probing-fields"
 import { useProbingForm } from "./probing-form"
 import { z } from "zod"
+import { ProbeSafetyNotice } from "./probe-safety-notice"
 
 export function InspectionWizard({
   recipe,
@@ -227,6 +228,7 @@ function InspectionDraft({
       }
     >
       <FieldGroup>
+        <ProbeSafetyNotice native />
         <Field>
           <FieldLabel htmlFor={`${id}-probe`}>Probe</FieldLabel>
           <OptionSelect

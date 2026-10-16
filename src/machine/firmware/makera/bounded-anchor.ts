@@ -1,17 +1,22 @@
 import { z } from "zod"
-import { ProbeCheckBindingSchema, readNcBlock } from "../../contract/index.ts"
+import {
+  ProbeCheckBindingSchema,
+  ProbeSearchTravelSchema,
+  ProbeTopGapSchema,
+  readNcBlock,
+} from "../../contract/index.ts"
 import type {
   PreparedProgram,
   ProbeCheckBinding,
 } from "../../contract/index.ts"
 
 const planSchema = z.strictObject({
-  gap: z.number().finite().min(0.1).max(5),
+  gap: ProbeTopGapSchema,
   diameter: z.number().finite().min(0.5).max(3.2),
   maxTravel: z.tuple([
-    z.number().finite().min(0.4).max(10),
-    z.number().finite().min(0.4).max(10),
-    z.number().finite().min(0.4).max(10),
+    ProbeSearchTravelSchema,
+    ProbeSearchTravelSchema,
+    ProbeSearchTravelSchema,
   ]),
 })
 const n = (value: number) => Number(value.toFixed(4))

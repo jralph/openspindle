@@ -36,6 +36,7 @@ import { anchorCalibrationRun } from "./anchor-calibration-run"
 import { useCalibrationRun } from "./use-calibration-run"
 import { CalibrationRunPanel } from "./calibration-run-panel"
 import { checkedProbeBinding, ProbeInputCheck } from "./probe-input-check"
+import { ProbeSafetyNotice } from "@/features/probing/probe-safety-notice"
 import { StopButton } from "@/features/job/stage-card"
 import { SaveAsAnchor } from "@/features/job/save-as-anchor"
 import { inspectionReport } from "@/features/job/inspection-report"
@@ -478,6 +479,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
         )}
         {draft.step === 1 && (
           <>
+            <ProbeSafetyNotice />
             <CalibrationIllustration kind="anchor" />
             <p>
               Use the Device controls beside this guide to manually jog the

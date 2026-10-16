@@ -46,7 +46,16 @@ export const fileKind: OperationKind<"file"> = {
     return ok({
       ...plain(nc),
       standalone:
-        plate.operations.length === 1 && isAnchorMeasurementNc(nc, kit),
+        plate.operations.length === 1 &&
+        (isAnchorMeasurementNc(nc, kit) ||
+          (!!kit.zProbing &&
+            (/^;@OPENSPINDLE_Z_PLAN /m.test(nc) ||
+              plate.tools.some(
+                (tool) =>
+                  tool.number !== null &&
+                  kit.zProbing!.tools.includes(tool.number) &&
+                  nc === kit.zProbing!.measurementNc(tool.number)
+              )))),
     })
   },
 }

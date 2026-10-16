@@ -28,7 +28,7 @@ OpenSpindle is a desktop app for preparing, checking and running jobs on a Maker
 - A simulated Z1 to try jobs on without a machine, moving as the Z1's planner moves it, its camera picture drawn as the Z1's camera sees the bed (**Settings › General › Z1 Simulator device**)
 - A firmware configuration editor with verified saves, a saved vacuum-power default, and work-light brightness for each appearance with an inactivity timer; the machine's own light timer, which darkens a dimmed light as a job starts, turned off from the Device page
 - A tool library with Fusion 360 import and Makera, Genmitsu, SpeTool, Dreanique and FoxAlien catalogs
-- STEP-NC project files, and NC export with the plate's setup
+- STEP-NC project files with Save/Save As, a centered filename and unsaved-change marker, and NC export with the plate's setup
 - Built-in PCB preparation from KiCad Gerber and Excellon files, using your local pcb2gcode installation
 - Error reports and logs under your control; no account or cloud service
 - An app for Windows, and a signed and notarized app for Apple silicon and Intel Macs, that update themselves

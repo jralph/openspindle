@@ -6,6 +6,7 @@ import type {
 } from "electron"
 import { readFile, stat } from "node:fs/promises"
 import path from "node:path"
+import { randomUUID } from "node:crypto"
 import { RpcError } from "@openspindle/rpc"
 import {
   FILE_KINDS,
@@ -48,6 +49,14 @@ export async function readKindFile(
 /** Native open/save dialogs for every file kind; one dialog at a time. */
 export class FileService {
   private dialogOpen = false
+  private readonly projectDestinations = new Map<string, string>()
+
+  rememberProject(filePath: string): string | undefined {
+    if (!hasFileExtension("project", filePath, "save")) return undefined
+    const id = randomUUID()
+    this.projectDestinations.set(id, filePath)
+    return id
+  }
 
   constructor(private readonly window: () => BrowserWindow | null) {}
 
@@ -65,13 +74,35 @@ export class FileService {
         : await dialog.showOpenDialog(options)
       const filePath = result.filePaths[0]
       if (result.canceled || !filePath) return { status: "canceled" }
-      return { status: "opened", ...(await readKindFile(kind, filePath)) }
+      return {
+        status: "opened",
+        ...(await readKindFile(kind, filePath)),
+        ...(kind === "project"
+          ? { destinationId: this.rememberProject(filePath) }
+          : {}),
+      }
     })
   }
 
   save(request: SaveFileRequest): Promise<SaveFileResult> {
     return this.exclusive(async () => {
       const spec = FILE_KINDS[request.kind]
+      if (request.destinationId) {
+        const target =
+          request.kind === "project"
+            ? this.projectDestinations.get(request.destinationId)
+            : undefined
+        if (!target)
+          throw new Error(
+            "This saved-file destination is no longer available. Use Save Project As to choose it again."
+          )
+        await writeFileAtomic(target, request.contents)
+        return {
+          status: "saved",
+          fileName: path.basename(target),
+          destinationId: request.destinationId,
+        }
+      }
       const options: SaveDialogOptions = {
         title: `Save ${spec.title}`,
         defaultPath: request.suggestedName,
@@ -87,7 +118,13 @@ export class FileService {
         ? result.filePath
         : `${result.filePath}.${spec.saveExtensions[0]}`
       await writeFileAtomic(filePath, request.contents)
-      return { status: "saved", fileName: path.basename(filePath) }
+      return {
+        status: "saved",
+        fileName: path.basename(filePath),
+        ...(request.kind === "project"
+          ? { destinationId: this.rememberProject(filePath) }
+          : {}),
+      }
     })
   }
 

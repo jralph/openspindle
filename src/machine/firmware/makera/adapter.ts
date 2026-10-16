@@ -283,7 +283,7 @@ export const makeraAdapter: FirmwareAdapter = {
   prepareProgram: prepareMakeraProgram,
   executionIssue: makeraExecutionIssue,
   assessPhysicalProgram: assessMakeraPhysicalProgram,
-  probeCheckTool: 9999,
+  probeCheckTools: [0, 9999],
   probeContact: (text) => {
     const match =
       /^\[PRB:([+-]?[\d.]+),([+-]?[\d.]+),([+-]?[\d.]+):([01])\]$/.exec(

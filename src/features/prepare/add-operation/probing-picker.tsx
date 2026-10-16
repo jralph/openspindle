@@ -33,6 +33,7 @@ import { useStrategyPicture } from "@/features/probing/use-strategy-picture"
 import { StrategyItem } from "./strategy-item"
 import { useAddOperation } from "./use-add-operation"
 import type { AddedOperation } from "./use-add-operation"
+import { ProbeSafetyNotice } from "@/features/probing/probe-safety-notice"
 
 /** What Probing adds, as the toolbar and Add operation offer it. */
 export const PROBING_DESCRIPTION =
@@ -132,6 +133,7 @@ export function ProbingSteps({
 
   return (
     <div className="flex flex-col gap-4">
+      <ProbeSafetyNotice native />
       {onBack && (
         <Button variant="ghost" className="self-start" onClick={onBack}>
           <ArrowLeft />
@@ -142,7 +144,9 @@ export function ProbingSteps({
       <FieldSet>
         <FieldLegend>Setup</FieldLegend>
         <ItemGroup className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {PROBING_STRATEGIES.map((strategy) => (
+          {PROBING_STRATEGIES.filter(
+            (strategy) => strategy.id !== "touch-off"
+          ).map((strategy) => (
             <StrategyChoice
               key={strategy.id}
               strategy={strategy}

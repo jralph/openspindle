@@ -2,6 +2,8 @@ import { z } from "zod"
 import {
   AnchorConfigurationSchema,
   ProbeCheckBindingSchema,
+  ProbeSearchTravelSchema,
+  ProbeTopGapSchema,
 } from "@/machine/contract"
 import type { AnchorConfiguration } from "@/machine/contract"
 import { EntityIdSchema, fail, ok } from "../primitives"
@@ -22,12 +24,12 @@ export const AnchorCalibrationSchema = z.strictObject({
   approach: z
     .strictObject({
       binding: ProbeCheckBindingSchema,
-      gap: z.number().finite().min(0.1).max(5),
+      gap: ProbeTopGapSchema,
       maxTravel: z
         .tuple([
-          z.number().finite().min(0.4).max(10),
-          z.number().finite().min(0.4).max(10),
-          z.number().finite().min(0.4).max(10),
+          ProbeSearchTravelSchema,
+          ProbeSearchTravelSchema,
+          ProbeSearchTravelSchema,
         ])
         .optional(),
       diameter: z.number().finite().min(0.5).max(3.2),

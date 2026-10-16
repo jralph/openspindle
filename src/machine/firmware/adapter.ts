@@ -328,8 +328,8 @@ export interface FirmwareAdapter {
     source: string,
     program: PreparedProgram
   ) => { issue: string | null; probeCheck?: ProbeCheckBinding }
-  /** Tool whose contact input is checked at rest; separate from tool-setter calibration. */
-  probeCheckTool?: number
+  /** Tools whose contact input is checked at rest; separate from tool-setter calibration. */
+  probeCheckTools?: readonly number[]
   probeContact?: (
     text: string
   ) => { position: [number, number, number]; success: boolean } | null

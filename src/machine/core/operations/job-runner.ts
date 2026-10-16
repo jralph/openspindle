@@ -1,4 +1,9 @@
-import { DEVICE_ASSISTS, partText, programParts } from "../../contract/index.ts"
+import {
+  DEVICE_ASSISTS,
+  isHeightCompensationOff,
+  partText,
+  programParts,
+} from "../../contract/index.ts"
 import type {
   JobState,
   PlateAssists,
@@ -80,6 +85,24 @@ function assistSteps(
   }
 }
 
+function requireZReference(request: RunRequest, telemetry: Telemetry) {
+  const reference = request.zReference
+  if (!reference) return
+  if (
+    telemetry.tool !== reference.tool ||
+    telemetry.toolOffset !== reference.toolOffset ||
+    !telemetry.workOrigin ||
+    Math.abs(telemetry.workOrigin.z - reference.originZ) > 0.001 ||
+    !isHeightCompensationOff(telemetry) ||
+    telemetry.spindleRpm !== 0 ||
+    telemetry.spindleOn === true
+  )
+    throw new MachineError(
+      "unverified",
+      "The measured part Z reference changed before cutting. The program was not started; probe Z again."
+    )
+}
+
 /** Aborts with the context, or when the preparation outlasts `milliseconds`. */
 function withDeadline(context: OperationContext, milliseconds: number) {
   const { clock } = context
@@ -131,6 +154,7 @@ export async function prepareAndStart(
   )
   try {
     let telemetry = await preflight(scoped)
+    requireZReference(request, telemetry)
     hooks.bedCleanBefore(job.bedClean(telemetry))
     const assists = partAssists(
       request.assists,
@@ -157,6 +181,7 @@ export async function prepareAndStart(
       )
     }
     telemetry = await preflight(scoped)
+    requireZReference(request, telemetry)
     if (job.assistPlan(assists, telemetry).length)
       throw new MachineError(
         "refused",

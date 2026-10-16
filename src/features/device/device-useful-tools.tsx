@@ -4,6 +4,7 @@ import { FieldLegend, FieldSet } from "@/components/ui/field"
 import { INSPECTION_RECIPES } from "@/domain/probing/inspection-recipes"
 import { openDialog } from "@/features/shell/dialogs"
 import { ControlCard } from "./device-control-card"
+import { openZProbe } from "./z-probe-dialog"
 
 /** Shortcuts open the existing docked guides; they never send machine commands. */
 export function DeviceUsefulTools({
@@ -32,6 +33,9 @@ export function DeviceUsefulTools({
               onClick={() => openDialog({ kind: "probing" })}
             >
               3D probe routines
+            </Button>
+            <Button variant="outline" onClick={() => openZProbe()}>
+              Z probe routines
             </Button>
             <Button
               variant="outline"

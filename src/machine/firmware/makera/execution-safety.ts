@@ -1,10 +1,14 @@
-import { isSimulator, readNcBlock, programParts } from "../../contract/index.ts"
+import {
+  isSimulator,
+  readNcBlock,
+  programParts,
+  UNBOUNDED_PROBE_REASON,
+} from "../../contract/index.ts"
 import type { FirmwareAdapter } from "../adapter.ts"
 import { boundedDiameterRequirement } from "./bounded-diameter.ts"
 import { boundedAnchorRequirement } from "./bounded-anchor.ts"
+import { boundedZRequirement } from "./bounded-z.ts"
 
-const UNBOUNDED_PROBE =
-  "This probing routine has no verified input check and bounded contact sequence. Recreate Anchor 1 or a diameter reading with its guide and complete the live signal check."
 const UNINSPECTED_EXECUTION =
   "Direct file and macro execution cannot verify the program's probing safety. Prepare the program and Run from Job so its contents can be checked."
 
@@ -41,7 +45,7 @@ function textExecutionIssue(
             allowProbeSetup &&
             block.words.some((each) => each.letter === "M" && each.value === 6)
           ))
-      if (probe) return `Line ${index + 1}: ${UNBOUNDED_PROBE}`
+      if (probe) return `Line ${index + 1}: ${UNBOUNDED_PROBE_REASON}`
       if (
         (letter === "M" && [23, 24, 32, 97, 98, 99, 601].includes(family)) ||
         (letter === "G" && [65, 66].includes(family))
@@ -61,6 +65,7 @@ export const assessMakeraPhysicalProgram: NonNullable<
 > = (source, program) => {
   try {
     const probeCheck =
+      boundedZRequirement(source, program) ??
       boundedDiameterRequirement(source, program) ??
       boundedAnchorRequirement(source, program)
     if (probeCheck) return { issue: null, probeCheck }

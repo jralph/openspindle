@@ -23,6 +23,7 @@ import { deriveJobView } from "@/features/job/job-view"
 
 export type CalibrationStage = "setter" | "contacts"
 type CalibrationRun = {
+  guide: "anchor" | "z"
   session: JobSession
   stage: CalibrationStage
   connectionId: string
@@ -54,12 +55,14 @@ function sameConnection(snapshot: MachineSnapshot, connectionId: string) {
 /** Explicit Run uses the existing checked job engine without adding a workspace plate. */
 export function useCalibrationRun(
   candidate: Plate | null,
-  selectedToolId: string | null
+  selectedToolId: string | null,
+  guide: "anchor" | "z" = "anchor"
 ) {
   const host = useMachineHost()
   const snapshot = useMachineSnapshot()
   const tools = useWorkspace((state) => state.tools)
-  const record = useCalibrationRunRecord()
+  const currentRecord = useCalibrationRunRecord()
+  const record = currentRecord?.guide === guide ? currentRecord : null
   const compiled = useMemo(
     () => (candidate ? compilePlate(candidate, tools) : null),
     [candidate, tools]
@@ -106,6 +109,7 @@ export function useCalibrationRun(
         device
       )
       runAtom.set(() => ({
+        guide,
         session,
         stage,
         connectionId,
@@ -264,7 +268,7 @@ export function useCalibrationRun(
     onError: reportError,
   })
   let reason = checklist.blocker
-  if (record || snapshot.job)
+  if (currentRecord || snapshot.job)
     reason = "Finish or dismiss the current run before starting another stage."
   return {
     record,

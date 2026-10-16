@@ -1,5 +1,9 @@
 import { z } from "zod"
-import { ProbeCheckBindingSchema } from "@/machine/contract"
+import {
+  ProbeCheckBindingSchema,
+  ProbeSearchTravelSchema,
+  ProbeTopGapSchema,
+} from "@/machine/contract"
 import type { XYZ } from "../geometry/frame"
 import { toMicrometre } from "../primitives"
 
@@ -137,15 +141,15 @@ export const BoundedDiameterSchema = z
   .strictObject({
     binding: ProbeCheckBindingSchema,
     deviceId: z.string().min(1).max(500),
-    gap: z.number().finite().min(0.1).max(5),
+    gap: ProbeTopGapSchema,
     width: z.number().finite().min(2).max(100),
     distance: z.number().finite().min(2).max(100),
     depth: z.number().finite().min(0.5).max(10),
     diameter: z.number().finite().min(0.5).max(3.2),
     maxTravel: z.tuple([
-      z.number().finite().min(0.4).max(10),
-      z.number().finite().min(0.4).max(10),
-      z.number().finite().min(0.4).max(10),
+      ProbeSearchTravelSchema,
+      ProbeSearchTravelSchema,
+      ProbeSearchTravelSchema,
     ]),
   })
   .superRefine((value, ctx) => {

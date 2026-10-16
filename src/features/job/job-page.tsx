@@ -44,6 +44,9 @@ import { useCutPrediction } from "./use-cut-prediction"
 import { useJobTimeline } from "./use-job-timeline"
 import type { JobTimeline } from "./use-job-timeline"
 import { useJobView } from "./use-job-view"
+import { JobZProbeOption } from "./job-z-probe-option"
+import { zJobIssue } from "./z-probe-job"
+import { kitForPlate } from "@/domain/fixtures/catalog"
 
 /**
  * The job panel: the connected device and the job's controls on top, then its stages from the
@@ -64,7 +67,8 @@ function JobPanel({
   const calibrationOpen =
     !!calibrationRun &&
     subject?.plate.id === calibrationRun.session.plate.id &&
-    dialog?.kind === "anchor-calibration"
+    dialog?.kind ===
+      (calibrationRun.guide === "z" ? "z-probe" : "anchor-calibration")
   const runJob = useRunJob()
   const library = useWorkspace((state) => state.tools)
   const checklist = useRunChecklist(
@@ -73,7 +77,14 @@ function JobPanel({
     check
   )
   const run: MachineAction = {
-    reason: checklist.blocker,
+    reason:
+      checklist.blocker ??
+      (subject?.plate.setup.probeBeforeRun
+        ? zJobIssue(
+            subject.compiled,
+            kitForPlate(subject.plate).zProbing?.tools ?? []
+          )
+        : null),
     pending: runJob.pending,
     run: () => {
       if (subject && checklist.ready)
@@ -92,12 +103,24 @@ function JobPanel({
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-3 p-3">
           <JobSummary view={view} subject={subject} />
+          {view.kind === "idle" && subject && (
+            <JobZProbeOption plate={subject.plate} />
+          )}
           {calibrationRun && (
             <Button
               variant="outline"
-              onClick={() => openDialog({ kind: "anchor-calibration" })}
+              onClick={() =>
+                openDialog({
+                  kind:
+                    calibrationRun.guide === "z"
+                      ? "z-probe"
+                      : "anchor-calibration",
+                })
+              }
             >
-              Continue Anchor 1 calibration
+              {calibrationRun.guide === "z"
+                ? "Continue Z probing"
+                : "Continue Anchor 1 calibration"}
             </Button>
           )}
           <MachineDiagnosis />

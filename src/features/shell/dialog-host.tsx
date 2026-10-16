@@ -1,6 +1,7 @@
 import { DevicePicker } from "@/features/device/device-picker"
 import { AnchorCalibrationDialog } from "@/features/device/anchor-calibration-dialog"
 import { ProbeDiameterCalibrationDialog } from "@/features/device/probe-diameter-calibration-dialog"
+import { ZProbeDialog } from "@/features/device/z-probe-dialog"
 import { GuidedSetup } from "@/features/workshop/guided-setup"
 import { FacingDialog } from "@/features/workshop/facing-dialog"
 import { MeasurementSetup } from "@/features/workshop/measurement-setup"
@@ -43,6 +44,8 @@ function OpenDialog({ dialog }: { dialog: WorkspaceDialog }) {
   switch (dialog.kind) {
     case "anchor-calibration":
       return <AnchorCalibrationDialog onClose={closeDialog} />
+    case "z-probe":
+      return <ZProbeDialog job={dialog.job} onClose={closeDialog} />
     case "probe-diameter-calibration":
       return <ProbeDiameterCalibrationDialog onClose={closeDialog} />
     case "processes":

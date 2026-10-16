@@ -42,11 +42,12 @@ export function useUnsavedChanges() {
     const report = () => {
       const state = workspace.state
       const edited = hasUnsavedChanges(state)
-      const key = `${String(edited)}:${state.project.name}`
+      const name = state.project.fileDestination ? state.project.fileName : ""
+      const key = `${String(edited)}:${name}`
       if (key === reported) return
       latest = key
       clearTimeout(retryTimer)
-      send(edited, state.project.name, key)
+      send(edited, name.slice(0, 200), key)
     }
     report()
     const stopWorkspace = workspace.subscribe(report)

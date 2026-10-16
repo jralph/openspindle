@@ -14,9 +14,11 @@ export type CalibrationRunner = ReturnType<typeof useCalibrationRun>
 export function CalibrationRunPanel({
   runner,
   onMeasured,
+  contactTitle = "3 · Probe Anchor 1",
 }: {
   runner: CalibrationRunner
   onMeasured: (offset: number) => void
+  contactTitle?: string
 }) {
   const actions = useJobActions()
   const { record, job, view } = runner
@@ -35,9 +37,7 @@ export function CalibrationRunPanel({
     },
   })
   return (
-    <StageCard
-      title={setter ? "1 · Tool-setter detection" : "3 · Probe Anchor 1"}
-    >
+    <StageCard title={setter ? "1 · Tool-setter detection" : contactTitle}>
       {job && view.kind !== "idle" && <JobStatusBadge view={view} />}
       {!job && (
         <FieldDescription>

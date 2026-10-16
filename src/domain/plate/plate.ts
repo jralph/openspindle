@@ -70,6 +70,8 @@ export const PlateSetupSchema = z
      */
     workOriginAnchor: EntityIdSchema.nullable().optional(),
     assists: PlateAssistsSchema,
+    /** Run first opens the bounded surface guide; cutting needs a verified continuation. */
+    probeBeforeRun: z.boolean().optional(),
     /**
      * What is on the bed: the bed itself, wasteboards, clamps and the rest. The fixture commands
      * change them (`fixture.add` and the others in `WorkspaceCommand`).

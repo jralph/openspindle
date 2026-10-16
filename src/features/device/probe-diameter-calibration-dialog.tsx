@@ -48,6 +48,7 @@ import { useProbingForm } from "@/features/probing/probing-form"
 import { AppDialog } from "@/features/shell/app-dialog"
 import { CalibrationIllustration } from "./calibration-illustration"
 import { checkedProbeBinding, ProbeInputCheck } from "./probe-input-check"
+import { ProbeSafetyNotice } from "@/features/probing/probe-safety-notice"
 
 type ReadingSource = {
   kind: "manual" | "physical" | "simulator"
@@ -778,6 +779,7 @@ export function ProbeDiameterCalibrationDialog({
         )}
         {draft.step === 2 && (
           <>
+            <ProbeSafetyNotice />
             <p>
               For each reading: return the same measured probe over the solid
               boss center, set the estimated top gap and search limits on the

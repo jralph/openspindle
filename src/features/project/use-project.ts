@@ -32,6 +32,7 @@ import {
 /** A decoded project, the file it came from and what opening it could not do. */
 export type ProjectCandidate = OpenedProject & {
   readonly fileName: string
+  readonly destinationId?: string
   /**
    * The project's models that the Models library did not take. Empty until `applyProject` adds
    * them: opening one is not final until then, so nothing is added to the library before that.
@@ -71,6 +72,12 @@ export async function applyProject(
     libraryOf(workspace.state)
   )
   workspace.dispatch({ type: "workspace.replace", state: opened.state })
+  if (/\.stpnc$/i.test(candidate.fileName))
+    workspace.dispatch({
+      type: "project.saved",
+      fileName: candidate.fileName,
+      destinationId: candidate.destinationId,
+    })
   markProjectSaved(workspace.state)
   const added = opened.added
     ? `Added ${plural(opened.added, "tool")} its plates use to your tool library.`
@@ -100,12 +107,15 @@ export function useSaveProject() {
   return useMutation({
     mutationKey: [...WORKSPACE_MUTATION, "save-project"],
     scope: workspaceScope,
-    mutationFn: async () => {
+    mutationFn: async (options?: { saveAs?: boolean }) => {
       const state = workspace.state
       const { contents, missing } = await encodeWorkspace(state, host)
       const result = await host.files.save({
         kind: "project",
         suggestedName: suggestedProjectName(state.project.fileName),
+        destinationId: options?.saveAs
+          ? undefined
+          : state.project.fileDestination?.id,
         contents,
       })
       return { result, state, missing }
@@ -115,6 +125,7 @@ export function useSaveProject() {
       workspace.dispatch({
         type: "project.saved",
         fileName: result.fileName,
+        destinationId: result.destinationId,
       })
       markProjectSaved(state)
       const note = missingModelsNote(missing)
@@ -143,7 +154,7 @@ export function useOpenProject() {
     }: {
       file?: File
     }): Promise<ProjectCandidate | null> => {
-      let opened: { fileName: string; contents: string }
+      let opened: { fileName: string; contents: string; destinationId?: string }
       if (file) opened = await readProjectFile(file)
       else {
         const result = await host.files.open("project")
@@ -153,7 +164,12 @@ export function useOpenProject() {
       const decoded = decodeProject(opened.contents)
       if (!decoded.ok) throw new Error(decoded.error)
       // Models are added to the library only once opening is confirmed (applyProject), not here.
-      return { ...decoded.value, notices: [], fileName: opened.fileName }
+      return {
+        ...decoded.value,
+        notices: [],
+        fileName: opened.fileName,
+        destinationId: opened.destinationId,
+      }
     },
     onSuccess: (candidate) => {
       if (!candidate) return

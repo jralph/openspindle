@@ -29,6 +29,14 @@ export const RunRequestSchema = z.strictObject({
   name: DisplayNameSchema,
   /** A reviewed run cannot migrate to another connection while preparation is in flight. */
   expectedConnectionId: z.uuid().optional(),
+  /** A pre-job surface reference must survive preparation unchanged. Checked in the machine host. */
+  zReference: z
+    .strictObject({
+      tool: z.int().nonnegative(),
+      toolOffset: z.number().finite().min(-10000).max(10000),
+      originZ: z.number().finite().min(-10000).max(10000),
+    })
+    .optional(),
   source: z
     .string()
     .min(1, "The NC program is empty.")

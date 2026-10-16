@@ -1,5 +1,7 @@
 # Probing
 
+Physical contact probing uses the bounded [Anchor 1 and diameter guides](probe-calibration.md) and the separate **Device → Useful tools → Z probe routines** guide. All share the input proof, maximum travel, checked contact and release, and stop-without-retry policy. The ordinary native corner, centre, grid and stored surface operations described below remain available for simulator practice and preview; the physical machine host refuses their unbounded searches. Z surface is accessed through its own guide rather than the 3D operation picker. On Job, **Probe part Z before cutting** runs that guide before the normal cutter change; see [Z surface](touch-off.md).
+
 The Job tab also combines origin and grid measurements into an [inspection report](metrology.md): stock/boss and pocket spans, machine positions, distances between centers, and sampled surface flatness, with JSON and CSV export. These use the setup cycles and their existing work-origin and compensation effects.
 
 Run-stage measurements belong only to operations whose generated route reports them. In particular, an unreported bare grid is skipped when placing a later anchored grid's measurements. Each probing method declares that reporting capability alongside its generation behavior.

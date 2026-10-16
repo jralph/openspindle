@@ -1,4 +1,8 @@
-import type { NcWord, ProbeCheckBinding } from "@/machine/contract"
+import type {
+  NcWord,
+  ProbeCheckBinding,
+  ZProbeSettings,
+} from "@/machine/contract"
 import type { FixtureDefinition } from "@/domain/fixtures/definitions"
 import type { CamMarkers } from "@/domain/nc/cam-markers"
 import type { Point3 } from "@/domain/nc/gcode"
@@ -85,6 +89,14 @@ export type FacingKeepOut = {
 }
 
 export abstract class FixtureKit {
+  readonly zProbing: {
+    readonly tools: readonly number[]
+    readonly boundedNc: (
+      binding: ProbeCheckBinding,
+      settings: ZProbeSettings
+    ) => string
+    readonly measurementNc: (tool: number) => string
+  } | null = null
   /** The machine's supported physical reference for an inside-corner anchor calibration. */
   readonly anchorCalibration: {
     readonly anchorId: string
