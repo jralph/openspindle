@@ -28,8 +28,13 @@ import { AddFixtureDialog } from "@/features/prepare/fixtures/add-fixture-dialog
 import { SettingsDialog } from "@/features/settings/settings-dialog"
 import { WorkspaceToolLibrary } from "@/features/tool-library"
 import { WorkspaceSettingsDialog } from "@/features/workspace-settings/workspace-settings-dialog"
-import { AppDialog } from "./app-dialog"
-import { closeDialog, openDialog, useOpenDialog } from "./dialogs"
+import { AppDialog, GuidePanelContext } from "./app-dialog"
+import {
+  closeDialog,
+  isGuideDialog,
+  openDialog,
+  useOpenDialog,
+} from "./dialogs"
 import { ImportDialog } from "./import-dialog"
 import type { WorkspaceDialog } from "./dialogs"
 
@@ -157,5 +162,16 @@ export function DialogHost() {
   useFusionSync()
   useFusionPairing()
   const dialog = useOpenDialog()
-  return dialog && <OpenDialog dialog={dialog} />
+  return dialog && !isGuideDialog(dialog) && <OpenDialog dialog={dialog} />
+}
+
+/** A guide is part of the workspace layout, with no overlay or focus trap. */
+export function GuideHost() {
+  const dialog = useOpenDialog()
+  if (!dialog || !isGuideDialog(dialog)) return null
+  return (
+    <GuidePanelContext.Provider value>
+      <OpenDialog dialog={dialog} />
+    </GuidePanelContext.Provider>
+  )
 }

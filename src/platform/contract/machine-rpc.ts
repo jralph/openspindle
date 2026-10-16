@@ -17,6 +17,7 @@ import {
   DisconnectRequestSchema,
   HeightMapSchema,
   SwitchReportSchema,
+  ReadSwitchesRequestSchema,
   MachineCommandSchema,
   MachineSnapshotSchema,
   NetworkDeviceSchema,
@@ -151,7 +152,7 @@ export const machineMethods = {
     timeoutMs: 0,
   },
   "machine.readSwitches": {
-    params: none,
+    params: ReadSwitchesRequestSchema.optional(),
     result: SwitchReportSchema,
     timeoutMs: 30_000,
   },

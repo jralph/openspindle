@@ -24,6 +24,7 @@ import {
   MachineCommandSchema,
   RUN_LIMITS,
   RunRequestSchema,
+  ReadSwitchesRequestSchema,
   WriteAnchorsRequestSchema,
   AnchorConfigurationSchema,
   WriteConfigurationRequestSchema,
@@ -1079,8 +1080,22 @@ export class MachineController {
    * Reads the machine's switches, as diagnosis inspects them: in the states the firmware takes
    * it in, an alarm among them, never while a program runs.
    */
-  async readSwitches(): Promise<SwitchReport> {
+  async readSwitches(input?: unknown): Promise<SwitchReport> {
+    const request = parse(ReadSwitchesRequestSchema.optional(), input)
+    const checkConnection = () => {
+      if (
+        request &&
+        (!this.session?.ready ||
+          this.connectionId(this.session) !== request.expectedConnectionId)
+      )
+        throw new MachineError(
+          "connection-lost",
+          "The probe test's device connection changed."
+        )
+    }
+    checkConnection()
     this.admitNow({ key: "readSwitches" })
+    if (request?.startProbeCheck) this.probeSignal.invalidate()
     return this.operate("inspection", "Reading switches", async (context) => {
       try {
         const { report, before, after } = await readSwitches(
@@ -1089,6 +1104,7 @@ export class MachineController {
             this.probeRead = { before: initial, changed: false }
           }
         )
+        checkConnection()
         if (this.probeRead?.changed) this.probeSignal.invalidate()
         else if (this.adapter.probeCheckTool !== undefined)
           this.probeSignal.read(

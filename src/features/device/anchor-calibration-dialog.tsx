@@ -2,7 +2,6 @@ import { useId, useMemo, useState } from "react"
 import { createAtom, useSelector } from "@tanstack/react-store"
 import { useNavigate } from "@tanstack/react-router"
 import { z } from "zod"
-import { toast } from "sonner"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -23,7 +22,7 @@ import { createPlateSetup } from "@/domain/plate/plate"
 import { strategyById } from "@/domain/probing/strategies"
 import { machineId } from "@/machine/contract"
 import { probeProfile } from "@/domain/tools/tool"
-import { useMachineSnapshot, useReadSwitches } from "@/platform/machine"
+import { useMachineSnapshot } from "@/platform/machine"
 import { strategyProbes } from "@/features/probing/probe-tools"
 import { ParameterField, probingField } from "@/features/probing/probing-fields"
 import { useProbingForm } from "@/features/probing/probing-form"
@@ -33,6 +32,7 @@ import { CalibrationIllustration } from "./calibration-illustration"
 import { anchorCalibrationRun } from "./anchor-calibration-run"
 import { useCalibrationRun } from "./use-calibration-run"
 import { CalibrationRunPanel } from "./calibration-run-panel"
+import { ProbeInputCheck } from "./probe-input-check"
 import { StopButton } from "@/features/job/stage-card"
 import { SaveAsAnchor } from "@/features/job/save-as-anchor"
 import { inspectionReport } from "@/features/job/inspection-report"
@@ -48,6 +48,8 @@ type Draft = {
   maxY: number
   maxDown: number
   savedRunId?: string
+  signalBindingId?: string
+  signalToolId?: string
 }
 const draftAtom = createAtom<Draft>({
   step: 0,
@@ -85,7 +87,6 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   const kit = kitForSetup(placement)
   const reference = kit.anchorCalibration
   const machine = useMachineSnapshot()
-  const readSwitches = useReadSwitches()
   const navigate = useNavigate()
   const [confirmedSetup, setConfirmedSetup] = useState<string | null>(null)
   const [valid, setValid] = useState(true)
@@ -133,9 +134,15 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   )
   const check = machine.probeCheck
   const binding =
-    check?.phase === "verified" && check.connectionId === machine.connection.id
+    check?.phase === "verified" &&
+    check.connectionId === machine.connection.id &&
+    check.expiresAt > Date.now()
       ? check.binding
       : null
+  const signalVerified =
+    !!binding &&
+    draft.signalBindingId === binding.id &&
+    draft.signalToolId === tool?.id
   const setupKey = JSON.stringify({
     deviceId: placement.deviceId,
     connectionId: machine.connection.id,
@@ -185,9 +192,9 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
   )
     reason = "Select the L-bracket fitted at Anchor 1."
   let runReason = reason
-  if (!runReason && !binding)
+  if (!runReason && !signalVerified)
     runReason =
-      "Complete the live released → triggered → released signal check after positioning."
+      "Position the probe, touch it once and remove contact; wait for Probe signal verified."
   if (!runReason && binding?.tool !== probeNumber)
     runReason = "Check the selected, measured probe's live signal again."
   if (
@@ -266,10 +273,12 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
       return
     runner.run.mutate(stage)
   }
-  let readLabel = "Read released probe / start again"
-  if (check?.phase === "released") readLabel = "Read while touching probe"
-  else if (check?.phase === "triggered")
-    readLabel = "Read after releasing probe"
+  let nextReason = reason
+  if (!nextReason && draft.step === 0 && !activeProbe)
+    nextReason = "Run tool-setter detection for the fitted probe first."
+  if (!nextReason && draft.step === 1 && !signalVerified)
+    nextReason =
+      "Position the probe, touch it once and remove contact. Next unlocks when its signal is verified."
   return (
     <AppDialog
       title={`Auto calibrate ${reference?.name ?? "anchor"}`}
@@ -299,12 +308,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
           {draft.step < 2 ? (
             <ReasonButton
               label={draft.step === 0 ? "Use existing measurement" : "Next"}
-              reason={
-                reason ??
-                (draft.step === 0 && !activeProbe
-                  ? "Run tool-setter detection first, or select the same already measured active probe."
-                  : null)
-              }
+              reason={nextReason}
               disabled={!!owned}
               onClick={() => changeStep(draft.step + 1)}
             >
@@ -435,12 +439,11 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
           <>
             <CalibrationIllustration kind="anchor" />
             <p>
-              After tool detection, choose Continue to manual positioning. Close
-              this guide and manually jog the probe over the solid top at the
-              L-bracket's front-left elbow, clear of screws and holes. Aim about
-              5 mm left and 5 mm forward of its inner corner, with the tip
-              roughly 5 mm above the aluminium top. Reopen this guide without
-              moving the probe again.
+              Use the Device controls beside this guide to manually jog the
+              probe over the solid top at the L-bracket's front-left elbow,
+              clear of screws and holes. Aim about 5 mm left and 5 mm forward of
+              its inner corner, with the tip roughly 5 mm above the aluminium
+              top. Leave the axes stationary when you test the signal below.
             </p>
             {target && (
               <FieldDescription>
@@ -491,50 +494,30 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
               than 5 mm downward search. Choose limits for the actual
               clearances; failure to trigger stops the job without retrying.
             </FieldDescription>
-            <p>
-              With the spindle stopped and the machine stationary: read the
-              released signal, gently trigger the probe and hold it while
-              reading, then release and read again. For a conductive rod, use a
-              conductive contact connected to the table without moving the axes;
-              verify the bracket's contacted surfaces also conduct. The app must
-              observe all three states. A tool-setter measurement or LED alone
-              does not count.
-            </p>
-            {conductive && (
-              <FieldDescription>
-                Use a loose conductive contact connected to the actual bracket
-                to touch the stationary rod for the triggered reading, then
-                remove it for the released reading. Do not push or bend the
-                rigid rod and do not jog into the bracket to test the signal.
-                Remove loose leads and contacts from the travel area before
-                running bounded anchor probing.
-              </FieldDescription>
-            )}
-            <FieldDescription>
-              Live check: {check?.phase ?? "not started"}. Moving, changing
-              tools or reconnecting requires a new check. A completed check
-              expires after two minutes and is used for one Run.
-            </FieldDescription>
-            <ReasonButton
-              label={readLabel}
-              reason={
-                reason ??
-                (!activeProbe
-                  ? "Use tool-setter detection to make the fitted probe active, then position manually before checking its signal."
-                  : null) ??
-                (!machine.availability.readSwitches.allowed
-                  ? machine.availability.readSwitches.reason
-                  : null)
-              }
-              disabled={readSwitches.isPending || !!owned}
-              onClick={() =>
-                readSwitches.mutate(undefined, {
-                  onError: (error) => toast.error(error.message),
-                })
-              }
+            <Button
+              variant="outline"
+              onClick={() => void navigate({ to: "/device" })}
             >
-              {readLabel}
-            </ReasonButton>
+              Show positioning controls
+            </Button>
+            {tool && (
+              <ProbeInputCheck
+                tool={tool}
+                toolNumber={probeNumber ?? null}
+                disabled={
+                  !!owned ||
+                  !target ||
+                  !machine.telemetry?.machine ||
+                  Math.abs(machine.telemetry.machine.x - target[0]) >
+                    reference!.startTolerance ||
+                  Math.abs(machine.telemetry.machine.y - target[1]) >
+                    reference!.startTolerance
+                }
+                onVerified={(signalBindingId) =>
+                  update({ signalBindingId, signalToolId: tool.id })
+                }
+              />
+            )}
           </>
         )}
         {draft.step === 2 && (

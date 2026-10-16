@@ -8,6 +8,7 @@ import type {
   DisconnectRequest,
   HeightMap,
   SwitchReport,
+  ReadSwitchesRequest,
   MachineCommand,
   MachineSnapshot,
   NetworkDevice,
@@ -92,7 +93,7 @@ export interface MachineHost {
   ) => Promise<WriteConfigurationResult>
   readHeightMap: (signal?: AbortSignal) => Promise<HeightMap>
   /** The machine's switches as it reads them now. */
-  readSwitches: () => Promise<SwitchReport>
+  readSwitches: (request?: ReadSwitchesRequest) => Promise<SwitchReport>
   watchCamera: (listener: (event: CameraEvent) => void) => () => void
   /** The machine console: its backlog at once, then new entries in batches. */
   watchConsole: (listener: (entries: ConsoleEntry[]) => void) => () => void

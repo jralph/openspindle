@@ -1,5 +1,7 @@
 # Guided workshop
 
+Wizards and guides open in a resizable right sidebar beside the workspace: guided setup, facing and its feeds/speeds assistant, probing/inspection, measurement-to-setup, reusable processes and probe calibration. Device, Job and Prepare remain accessible while the guide is open. Clicking outside does not dismiss a guide, and opening one sends no motion. Modal editing and confirmation dialogs retain their normal guards.
+
 The Prepare toolbar offers Guided setup, Facing wizard and Reusable processes. Creating, editing, calculating, applying measurements, loading a process and previewing stock never command the machine. Run stays on Job. Physical Z1 connections enable the ordinary screen controls, jobs and probing adapter. Gamepad sessions remain simulator-only; physical facing, metrology and calibration in this fork still need hands-on verification.
 
 ## Guided setup

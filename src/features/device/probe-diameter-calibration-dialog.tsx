@@ -38,7 +38,7 @@ import type { Tool } from "@/domain/tools/tool"
 import { toMicrometre } from "@/domain/primitives"
 import { machineId } from "@/machine/contract"
 import { useHost } from "@/platform/host-context"
-import { useMachineSnapshot, useReadSwitches } from "@/platform/machine"
+import { useMachineSnapshot } from "@/platform/machine"
 import { useJobSession } from "@/features/job/job-session"
 import { deriveJobView } from "@/features/job/job-view"
 import { inspectionReport } from "@/features/job/inspection-report"
@@ -47,6 +47,7 @@ import { ParameterField, probingField } from "@/features/probing/probing-fields"
 import { useProbingForm } from "@/features/probing/probing-form"
 import { AppDialog } from "@/features/shell/app-dialog"
 import { CalibrationIllustration } from "./calibration-illustration"
+import { ProbeInputCheck } from "./probe-input-check"
 
 type ReadingSource = {
   kind: "manual" | "physical" | "simulator"
@@ -57,6 +58,8 @@ type ReadingSource = {
 type Draft = {
   step: number
   toolId: string
+  signalBindingId?: string
+  signalToolId?: string
   settings: {
     width: number
     distance: number
@@ -155,7 +158,6 @@ export function ProbeDiameterCalibrationDialog({
   const fixtures = useFixtureLibraryStore()
   const library = useWorkspace((state) => state.tools)
   const machine = useMachineSnapshot()
-  const readSwitches = useReadSwitches()
   const session = useJobSession()
   const host = useHost()
   const navigate = useNavigate()
@@ -210,16 +212,13 @@ export function ProbeDiameterCalibrationDialog({
     setConfirmedSetup(value ? setupKey : null)
   const check = machine.probeCheck
   const binding =
-    check?.phase === "verified" && check.connectionId === machine.connection.id
+    check?.phase === "verified" &&
+    check.connectionId === machine.connection.id &&
+    check.expiresAt > Date.now()
       ? check.binding
       : null
   const profile = tool && probeProfile(tool)
   const probeNumber = profile && kit.probing?.slot(profile)
-  const activeProbe =
-    probeNumber !== null &&
-    probeNumber !== undefined &&
-    machine.telemetry?.tool === probeNumber &&
-    machine.telemetry.toolOffset !== null
   const device = machine.connection.device
   let preparationIssue: string | null = null
   if (!kit.diameterCalibration)
@@ -256,19 +255,20 @@ export function ProbeDiameterCalibrationDialog({
         })
       : null
   let runIssue = preparationIssue
-  if (!runIssue && !binding)
+  if (
+    !runIssue &&
+    (!binding ||
+      draft.signalBindingId !== binding.id ||
+      draft.signalToolId !== tool?.id)
+  )
     runIssue =
-      "Complete the live released → triggered → released signal check after manually positioning."
+      "Position the probe, touch once and remove contact; wait for Probe signal verified."
   if (!runIssue && binding?.tool !== probeNumber)
     runIssue = "The checked active probe must match this library probe."
   if (!runIssue && (!plan || !plan.success))
     runIssue =
       plan?.error.issues[0]?.message ??
       "Check the reference and bounded travel settings."
-  let readLabel = "Read released probe / start again"
-  if (check?.phase === "released") readLabel = "Read while touching probe"
-  else if (check?.phase === "triggered")
-    readLabel = "Read after releasing probe"
   const report = inspectionReport(deriveJobView(session, machine))
   const selectTool = (toolId: string) => {
     update({
@@ -794,38 +794,17 @@ export function ProbeDiameterCalibrationDialog({
               separate calibration probe entry; the original probe stays
               unchanged until Save.
             </p>
-            <p>
-              With the machine stationary and spindle stopped: read released,
-              gently trigger and hold the probe while reading, then release and
-              read again. The actual input must change. For a conductive rod,
-              use a conductive contact connected to the table without moving the
-              axes. Tool-setter success does not prove this input works.
-            </p>
-            <FieldDescription>
-              Live signal: {check?.phase ?? "not started"}. Proof expires in two
-              minutes, is used for one Run and is invalidated by movement, tool
-              changes or reconnecting.
-            </FieldDescription>
-            <ReasonButton
-              label={readLabel}
-              reason={
-                preparationIssue ??
-                (!activeProbe
-                  ? "Use the same fitted probe's tool-setter measurement, then manually position before checking its signal."
-                  : null) ??
-                (!machine.availability.readSwitches.allowed
-                  ? machine.availability.readSwitches.reason
-                  : null)
-              }
-              disabled={readSwitches.isPending || !!draft.pending}
-              onClick={() =>
-                readSwitches.mutate(undefined, {
-                  onError: (problem) => toast.error(problem.message),
-                })
-              }
-            >
-              {readLabel}
-            </ReasonButton>
+            {tool && (
+              <ProbeInputCheck
+                tool={tool}
+                toolNumber={probeNumber ?? null}
+                disabled={!!draft.pending}
+                onVerified={(signalBindingId) =>
+                  update({ signalBindingId, signalToolId: tool.id })
+                }
+              />
+            )}
+
             {runIssue && <FieldDescription>{runIssue}</FieldDescription>}
             <Field orientation="horizontal">
               <Checkbox

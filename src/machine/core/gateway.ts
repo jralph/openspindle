@@ -142,8 +142,8 @@ export class MachineGateway {
     return this.controller.readHeightMap(signal)
   }
 
-  readSwitches(): Promise<SwitchReport> {
-    return this.controller.readSwitches()
+  readSwitches(request?: unknown): Promise<SwitchReport> {
+    return this.controller.readSwitches(request)
   }
 
   readConfiguration(signal?: AbortSignal): Promise<FirmwareConfiguration> {

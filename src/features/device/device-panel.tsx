@@ -102,7 +102,10 @@ export function DevicePanel({
   const failure = stop.error ?? reset.error ?? command.error
 
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-auto p-5">
+    <main
+      data-machine-controls
+      className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-auto p-5"
+    >
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex min-w-0 flex-col gap-1">

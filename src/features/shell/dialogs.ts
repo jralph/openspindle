@@ -82,6 +82,21 @@ export type WorkspaceDialog =
 
 const dialogAtom = createAtom<WorkspaceDialog | null>(null)
 
+/** Guides share a docked workspace panel; confirmations and editors retain their modal guards. */
+export function isGuideDialog(dialog: WorkspaceDialog | null): boolean {
+  if (!dialog) return false
+  return [
+    "anchor-calibration",
+    "probe-diameter-calibration",
+    "guided-setup",
+    "facing",
+    "inspection",
+    "probing",
+    "measurement-setup",
+    "processes",
+  ].includes(dialog.kind)
+}
+
 export const openDialog = (dialog: WorkspaceDialog) =>
   dialogAtom.set(() => dialog)
 export const closeDialog = () => dialogAtom.set(() => null)
