@@ -34,7 +34,10 @@ import {
 } from "@/domain/probing/probe-calibration"
 import type { DiameterReading } from "@/domain/probing/probe-calibration"
 import { ToolSchema, probeProfile } from "@/domain/tools/tool"
-import type { Tool } from "@/domain/tools/tool"
+import {
+  DEFAULT_PROBE_TIP_DIAMETER,
+  withProbeTipDiameter,
+} from "@/domain/tools/probe-diameter"
 import { toMicrometre } from "@/domain/primitives"
 import { machineId } from "@/machine/contract"
 import { useHost } from "@/platform/host-context"
@@ -98,7 +101,7 @@ const empty = (): Draft => ({
     width: 15,
     distance: 10,
     depth: 2.5,
-    diameter: 2,
+    diameter: DEFAULT_PROBE_TIP_DIAMETER,
     gap: 5,
     maxLeft: 2.5,
     maxRight: 2.5,
@@ -133,21 +136,6 @@ function parseReadings(logs: string[], width: number) {
   )
 }
 
-/** Editing compensation also updates a tip dimension that represented that same ball. */
-function withDiameter(tool: Tool, diameter: number): Tool {
-  return ToolSchema.parse({
-    ...tool,
-    diameter,
-    geometry: {
-      ...tool.geometry,
-      tipDiameter:
-        tool.geometry.tipDiameter === tool.diameter
-          ? diameter
-          : tool.geometry.tipDiameter,
-    },
-  })
-}
-
 export function ProbeDiameterCalibrationDialog({
   onClose,
 }: {
@@ -170,7 +158,7 @@ export function ProbeDiameterCalibrationDialog({
   const strategy = strategyById("boss-center")!
   const probes = kit.probing
     ? strategyProbes(strategy, library, kit.probing).filter(
-        (entry) => entry.refused === null && entry.tool.id !== draft.trialToolId
+        (entry) => entry.tool.id !== draft.trialToolId
       )
     : []
   const tool =
@@ -326,7 +314,7 @@ export function ProbeDiameterCalibrationDialog({
         )
       const trialId = draft.trialToolId ?? crypto.randomUUID()
       const trial = {
-        ...withDiameter(tool, nextDiameter),
+        ...withProbeTipDiameter(tool, nextDiameter),
         id: trialId,
         name: `${tool.name} — calibration readings`,
       }
@@ -534,7 +522,7 @@ export function ProbeDiameterCalibrationDialog({
         )
       const note = `Effective X diameter ${summary.diameter.toFixed(3)} mm from three known-width Boss-X readings (${draft.settings.width.toFixed(3)} mm reference, range ${summary.range.toFixed(4)} mm), ${new Date().toISOString()}. GabrielMaker mean-of-two-contacts method. Scalar X-derived compensation also used for Y; Y accuracy unverified. Keep the same stylus and mounting orientation.`
       const calibrated = ToolSchema.parse({
-        ...withDiameter(live, summary.diameter),
+        ...withProbeTipDiameter(live, summary.diameter),
         notes: [live.notes, note].filter(Boolean).join("\n"),
       })
       const result = workspace.dispatch({
@@ -728,12 +716,12 @@ export function ProbeDiameterCalibrationDialog({
             <ParameterField
               id={`${id}-diameter`}
               parameter={{
-                label: "Initial probe diameter",
+                label: "Initial probe tip diameter",
                 unit: "mm",
                 min: 0.5,
                 max: 3.2,
                 step: 0.001,
-                default: 2,
+                default: DEFAULT_PROBE_TIP_DIAMETER,
               }}
               field={probingField(form, "diameter")}
               disabled={hasReadings || !!draft.pending}

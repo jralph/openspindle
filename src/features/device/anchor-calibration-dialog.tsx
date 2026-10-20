@@ -37,6 +37,7 @@ import { useCalibrationRun } from "./use-calibration-run"
 import { CalibrationRunPanel } from "./calibration-run-panel"
 import { checkedProbeBinding, ProbeInputCheck } from "./probe-input-check"
 import { ProbeSafetyNotice } from "@/features/probing/probe-safety-notice"
+import { ProbeTipDiameterField } from "@/features/probing/probe-tip-diameter-field"
 import { StopButton } from "@/features/job/stage-card"
 import { SaveAsAnchor } from "@/features/job/save-as-anchor"
 import { inspectionReport } from "@/features/job/inspection-report"
@@ -423,6 +424,7 @@ export function AnchorCalibrationDialog({ onClose }: { onClose: () => void }) {
                 }}
               />
             </Field>
+            {tool && <ProbeTipDiameterField tool={tool} disabled={!!owned} />}
             <Button
               variant="outline"
               disabled={!!owned}

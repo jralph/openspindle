@@ -46,6 +46,10 @@ Conductive profiles without an assigned model draw a flat-ended rod rather than 
 
 ## Effective probe diameter
 
+Every XYZ probe setup offers **Probe tip diameter**, including Anchor 1, Z probing, picked-point positioning and probing, inspection, and the Prepare operation inspector. It shows that probe's saved diameter or an editable **2.000 mm** default when unknown. Enter the contact ball or conductive rod diameter, then choose **Save tip diameter** before continuing. This is an undoable tool-library edit: future operations, generated compensation and inspection calculations use the saved value. Existing calibrated values are retained, and running jobs keep their frozen tools. The control is unavailable during an active run. Routine-specific diameter and clearance limits still apply. A Z-only probe does not use lateral ball-radius compensation.
+
+The tool editor labels the probe's main diameter **Probe tip diameter**. Choosing XYZ sensing for a new probe with an unknown diameter initializes it to 2 mm; known dimensions are preserved. Diameter calibration has its own editable **Initial probe tip diameter**, default 2 mm, and saves its computed effective diameter through the same library update.
+
 The guide prepares protected physical Boss-X readings with the same actual input proof and step-by-step contact verification as Anchor 1. It does not execute native M480.10. Pasted-reading calculation and report export remain available. Hardware verification of the new bounded sequence is outstanding.
 
 The four-step guide implements the known-width Boss-X method supplied with [GabrielMaker's diameter calibration video](https://www.youtube.com/watch?v=rj9dhoIGyUQ) and the user-supplied **3D Touch Probe Diameter Calculator - GabrielMaker.html**. The calculator's scripts are not embedded or executed. Pasted commands are parsed as data and are never sent to the machine.

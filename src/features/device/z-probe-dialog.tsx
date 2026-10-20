@@ -49,6 +49,7 @@ import { useCalibrationRun } from "./use-calibration-run"
 import { CalibrationRunPanel } from "./calibration-run-panel"
 import { zProbeRun } from "./z-probe-run"
 import { ProbeSafetyNotice } from "@/features/probing/probe-safety-notice"
+import { ProbeTipDiameterField } from "@/features/probing/probe-tip-diameter-field"
 import type { PointIntent } from "@/features/prepare/point-intent"
 import {
   pointFrameIssue,
@@ -383,6 +384,7 @@ export function ZProbeDialog({
                 }
               />
             </Field>
+            {tool && <ProbeTipDiameterField tool={tool} />}
             <p>
               Fit the selected probe securely and connect its signal cable.
               Disconnect other probes that share that input. Run tool-setter

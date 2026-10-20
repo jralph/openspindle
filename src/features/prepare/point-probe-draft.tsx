@@ -31,6 +31,7 @@ import { pickTargets } from "@/domain/plate/pick-targets"
 import { placementAnchors } from "@/domain/probing/placement"
 import { OriginSettings } from "@/features/probing/origin-settings"
 import { ProbeSafetyNotice } from "@/features/probing/probe-safety-notice"
+import { ProbeTipDiameterField } from "@/features/probing/probe-tip-diameter-field"
 import { strategyProbes } from "@/features/probing/probe-tools"
 import { openZProbe } from "@/features/device/z-probe-dialog"
 import { usePrepareSelection } from "./plate-tree/use-prepare-selection"
@@ -57,9 +58,7 @@ export function PointProbeDraft({
   const machine = plate && kitForPlate(plate).probing
   const probes =
     machine && strategy
-      ? strategyProbes(strategy, library.filter(isProbe), machine).filter(
-          (entry) => !entry.refused
-        )
+      ? strategyProbes(strategy, library.filter(isProbe), machine)
       : []
   const tool =
     probes.find((entry) => entry.tool.id === chosen)?.tool ?? probes.at(0)?.tool
@@ -112,9 +111,10 @@ export function PointProbeDraft({
             }))}
           />
         </Field>
+        {tool && <ProbeTipDiameterField tool={tool} />}
         {tool && strategy && machine ? (
           <OriginPointDraft
-            key={`${intent.id}:${tool.id}:${routine}`}
+            key={`${intent.id}:${tool.id}:${tool.diameter}:${routine}`}
             intent={intent}
             plate={plate}
             tool={tool}
@@ -178,12 +178,16 @@ function OriginPointDraft({
   const [valid, setValid] = useState(true)
   const [reviewed, setReviewed] = useState(false)
   const specs = source && methodSpecs(source, machine, plate)
+  const probeIssue =
+    strategyProbes(strategyById(routine)!, [tool], machine).at(0)?.refused ??
+    null
   const add = () => {
     const current = workspace.state.plates.find(
       (entry) => entry.id === plate.id
     )
     if (
       !source ||
+      probeIssue ||
       !valid ||
       !reviewed ||
       !current ||
@@ -260,9 +264,10 @@ function OriginPointDraft({
       <ReasonButton
         label="Add probing draft"
         reason={
-          !valid || !reviewed
+          probeIssue ??
+          (!valid || !reviewed
             ? "Review the probing geometry and correct any invalid fields."
-            : null
+            : null)
         }
         onClick={add}
       >

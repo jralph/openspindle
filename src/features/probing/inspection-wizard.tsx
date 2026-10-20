@@ -50,6 +50,7 @@ import { ParameterField, probingField } from "./probing-fields"
 import { useProbingForm } from "./probing-form"
 import { z } from "zod"
 import { ProbeSafetyNotice } from "./probe-safety-notice"
+import { ProbeTipDiameterField } from "./probe-tip-diameter-field"
 
 export function InspectionWizard({
   recipe,
@@ -74,11 +75,7 @@ export function InspectionWizard({
       strategyUnsupported(strategy, machine) ??
       strategyBlocked(strategy, plate, machine) ??
       ""
-  const probes = machine
-    ? strategyProbes(strategy, library, machine).filter(
-        (item) => item.refused === null
-      )
-    : []
+  const probes = machine ? strategyProbes(strategy, library, machine) : []
   const tool =
     probes.find((item) => item.tool.id === chosen)?.tool ??
     (machine &&
@@ -87,7 +84,8 @@ export function InspectionWizard({
         plate,
         probes.map((item) => item.tool),
         machine
-      ))
+      )) ??
+    probes.at(0)?.tool
   if (!placementAnchors(plate.setup).length)
     problem =
       "Read or restore stored anchors for this device before creating an inspection plate."
@@ -102,7 +100,7 @@ export function InspectionWizard({
     )
   return (
     <InspectionDraft
-      key={tool.id}
+      key={`${tool.id}:${tool.diameter}`}
       plate={plate}
       recipe={recipe}
       tool={tool}
@@ -151,13 +149,18 @@ function InspectionDraft({
     id: anchorId,
     name,
   }))
-  const problem = operations
-    .map(({ source }) =>
-      source.kind === "probing"
-        ? inspectionOperationProblem(source, plate, machine)
-        : "Invalid inspection source."
-    )
-    .find(Boolean)
+  const strategy = strategyById(
+    INSPECTION_RECIPES.find((entry) => entry.id === recipe)!.strategy
+  )!
+  const problem =
+    strategyProbes(strategy, [tool], machine).at(0)?.refused ??
+    operations
+      .map(({ source }) =>
+        source.kind === "probing"
+          ? inspectionOperationProblem(source, plate, machine)
+          : "Invalid inspection source."
+      )
+      .find(Boolean)
   const invalid =
     Object.values(validity).some((valid) => !valid) ||
     (recipe === "repeatability" && !countValid)
@@ -166,8 +169,6 @@ function InspectionDraft({
       if (invalid || problem)
         throw new Error(problem ?? "Correct the highlighted fields.")
       const liveTool = workspace.state.tools.find((item) => item.id === tool.id)
-      const definition = INSPECTION_RECIPES.find((item) => item.id === recipe)!
-      const strategy = strategyById(definition.strategy)!
       if (
         !liveTool ||
         !strategyProbes(strategy, [liveTool], machine).some(
@@ -241,6 +242,7 @@ function InspectionDraft({
             onValueChange={onProbe}
           />
         </Field>
+        <ProbeTipDiameterField tool={tool} disabled={create.isPending} />
         {recipe === "repeatability" && (
           <ParameterField
             id={`${id}-repeats`}

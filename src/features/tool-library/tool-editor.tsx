@@ -35,6 +35,7 @@ import {
 } from "@/domain/tools/tool"
 import type { ProbeProfile, ToolSegment, ToolSource } from "@/domain/tools/tool"
 import { OptionSelect } from "@/components/option-select"
+import { DEFAULT_PROBE_TIP_DIAMETER } from "@/domain/tools/probe-diameter"
 import { toolKindLabel } from "./tool-format"
 import type { Choice, ToolForm } from "./tool-form"
 import { modelDataUrl } from "./tool-model-file"
@@ -214,7 +215,21 @@ function GeneralSection({ form, source }: SectionProps) {
             {(profiled) =>
               profiled && (
                 <>
-                  <form.AppField name="probe.touch">
+                  <form.AppField
+                    name="probe.touch"
+                    listeners={{
+                      onChange: ({ value }) => {
+                        if (
+                          value === "xyz" &&
+                          form.getFieldValue("diameter") === null
+                        )
+                          form.setFieldValue(
+                            "diameter",
+                            DEFAULT_PROBE_TIP_DIAMETER
+                          )
+                      },
+                    }}
+                  >
                     {(field) => (
                       <field.ChoiceField
                         label="Touches"
@@ -316,9 +331,18 @@ function GeneralSection({ form, source }: SectionProps) {
 function GeometrySection({ form }: SectionProps) {
   return (
     <FieldGroup className="grid grid-cols-2 gap-4">
-      <form.AppField name="diameter">
-        {(field) => <field.NumberField label="Cutting diameter" unit="mm" />}
-      </form.AppField>
+      <form.Subscribe selector={(state) => state.values.probe !== null}>
+        {(probing) => (
+          <form.AppField name="diameter">
+            {(field) => (
+              <field.NumberField
+                label={probing ? "Probe tip diameter" : "Cutting diameter"}
+                unit="mm"
+              />
+            )}
+          </form.AppField>
+        )}
+      </form.Subscribe>
       <form.AppField name="geometry.maxDiameter">
         {(field) => <field.NumberField label="Maximum diameter" unit="mm" />}
       </form.AppField>

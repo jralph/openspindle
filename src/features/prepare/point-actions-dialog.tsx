@@ -29,6 +29,7 @@ import {
 import { CalibrationRunPanel } from "@/features/device/calibration-run-panel"
 import { zProbeRun } from "@/features/device/z-probe-run"
 import { openZProbe } from "@/features/device/z-probe-dialog"
+import { ProbeTipDiameterField } from "@/features/probing/probe-tip-diameter-field"
 import { StopButton } from "@/features/job/stage-card"
 import {
   measuredPointProbe,
@@ -254,6 +255,7 @@ function PointPositioning({
                 }}
               />
             </Field>
+            {tool && <ProbeTipDiameterField tool={tool} />}
             <p>
               Fit and cable the selected probe. A cutter cannot use these moves.
               Run tool-setter detection after fitting or remounting it, or
